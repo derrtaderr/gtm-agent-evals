@@ -1,0 +1,6 @@
+{
+  "archetype": "content",
+  "input": "Draft a short LinkedIn post about why GTM teams should evaluate their agents.",
+  "output": "Building the agent was never the hard part.\n\nGetting it to hold a standard, run after run, is.\n\nYou wrote tests before you shipped code. Do the same for the agents now writing your outreach. Gate them on a rubric, watch the streak, and only then hand over the keys.\n\nThat is how you earn autonomy instead of assuming it.",
+  "steps": []
+}
