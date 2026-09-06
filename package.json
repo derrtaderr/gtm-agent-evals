@@ -1,0 +1,22 @@
+{
+  "name": "gtm-agent-evals",
+  "version": "0.1.0",
+  "description": "Eval + regression platform for GTM agents: deterministic rules, an LLM rubric that fails closed, an N-clean-runs autonomy gate, golden-trajectory regression, telemetry, and a CI gate.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "gtm-agent-evals": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.0"
+  }
+}
