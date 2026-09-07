@@ -66,6 +66,20 @@ describe("requiredCTA", () => {
       await requiredCTA(run("Reply STOP to opt out."), { markers: ["reply stop"] }),
     ).toEqual([]);
   });
+  it("blocks a no-CTA email that merely contains a marker substring", async () => {
+    const v = await requiredCTA(run("This is worth a read for your team."));
+    expect(v).toHaveLength(1);
+    expect(v[0].rule).toBe("required-cta");
+    expect(v[0].severity).toBe("block");
+  });
+  it("passes an explicit imperative ask", async () => {
+    expect(await requiredCTA(run("Reply if interested."))).toEqual([]);
+  });
+  it("passes an imperative booking ask", async () => {
+    expect(await requiredCTA(run("Grab 15 minutes on my calendar here."))).toEqual(
+      [],
+    );
+  });
 });
 
 describe("lengthCap", () => {

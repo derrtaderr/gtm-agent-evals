@@ -37,39 +37,89 @@ export const noUnfilledPlaceholder: RuleFn = (run: AgentRun): Violation[] => {
   return violations;
 };
 
-// Default markers that signal a concrete next step. Overridable via params.
-const DEFAULT_CTA_MARKERS: string[] = [
-  "worth a",
-  "open to",
-  "book a",
-  "schedule a",
-  "grab 15",
-  "grab time",
-  "quick call",
-  "hop on a call",
-  "jump on a call",
-  "free to chat",
-  "up for a",
-  "interested in a call",
-  "see a demo",
-  "can i send",
+// A real CTA is an explicit ask, not a loose substring. Two forms count:
+//
+//  (A) an imperative ask: a sentence/line that STARTS with a call-to-action verb
+//      ("Reply if interested.", "Grab 15 minutes.", "Book a time."). Substrings
+//      buried mid-sentence ("worth a read") do not count.
+//  (B) an inviting question: the output asks a question AND carries a
+//      meeting/response marker ("Worth a quick call next week?").
+//
+// Both lists are overridable via params. Detection is deliberately conservative:
+// a genuine no-CTA send must never clear this block rule, which is the failure
+// the substring version allowed.
+
+const DEFAULT_CTA_IMPERATIVES: string[] = [
+  "reply",
+  "book",
+  "schedule",
+  "grab",
+  "hop on",
+  "jump on",
+  "join",
+  "register",
+  "download",
+  "connect",
+  "call me",
+  "let's",
+  "let us",
+  "shall we",
 ];
 
-/** Blocks when no call-to-action marker is present in the output. */
+const DEFAULT_CTA_QUESTION_MARKERS: string[] = [
+  "worth a",
+  "open to",
+  "free to",
+  "up for",
+  "interested in",
+  "can i",
+  "could we",
+  "would you",
+  "make sense",
+  "any interest",
+  "have time",
+  "a call",
+  "a chat",
+  "a demo",
+  "grab time",
+  "quick call",
+  "catch up",
+];
+
+/** Blocks when the output carries no explicit call-to-action. */
 export const requiredCTA: RuleFn = (
   run: AgentRun,
   params?: unknown,
 ): Violation[] => {
-  const markers =
-    (params as { markers?: string[] } | undefined)?.markers ??
-    DEFAULT_CTA_MARKERS;
+  const p = params as
+    | { markers?: string[]; imperatives?: string[] }
+    | undefined;
+  const questionMarkers = p?.markers ?? DEFAULT_CTA_QUESTION_MARKERS;
+  const imperatives = p?.imperatives ?? DEFAULT_CTA_IMPERATIVES;
   const lower = run.output.toLowerCase();
-  if (markers.some((m) => lower.includes(m.toLowerCase()))) return [];
+
+  // (A) imperative ask at the start of any line or sentence.
+  const clauses = run.output
+    .split(/(?<!\d)[.!?\n]+(?!\d)/)
+    .map((c) => c.trim().toLowerCase())
+    .filter(Boolean);
+  const hasImperative = clauses.some((c) =>
+    imperatives.some(
+      (verb) => c === verb || c.startsWith(verb + " ") || c.startsWith(verb + ","),
+    ),
+  );
+
+  // (B) inviting question: a "?" plus a meeting/response marker.
+  const hasInvitingQuestion =
+    lower.includes("?") &&
+    questionMarkers.some((m) => lower.includes(m.toLowerCase()));
+
+  if (hasImperative || hasInvitingQuestion) return [];
   return [
     {
       rule: "required-cta",
       message:
-        "No call-to-action found. A cold email needs a concrete next step (a call, a demo, a reply).",
+        "No explicit call-to-action found. A cold email needs a concrete ask (an imperative like \"Reply\"/\"Book a time\", or a question inviting a call).",
       severity: "block",
     },
   ];
