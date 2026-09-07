@@ -1,0 +1,67 @@
+# Example CI gate. Demonstrates blocking a merge on a BLOCK verdict (exit 3) or
+# a REGRESSION (exit 4). Runs against this repo's own synthetic examples/fixtures
+# so the repo's CI stays green, and shows the negative case (a failing run is
+# expected to BLOCK) in an isolated job that inverts the exit code.
+#
+# A downstream consumer copies the "gate" job, points `config`/`run` at their own
+# agent's config and a freshly produced run, and (for the rubric) sets the
+# ANTHROPIC_API_KEY secret instead of rules-only.
+
+name: eval-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # The real gate: a clean run must PASS, or the job (and the merge) is blocked.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gate a clean run (rules-only, keyless)
+        uses: ./
+        with:
+          config: examples/outbound.config.json
+          run: fixtures/outbound/passing.json
+          rules-only: "true"
+          telemetry: telemetry/ci-events.jsonl
+
+  # Full unit + integration suite, including the exit-code and fail-closed tests.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  # Proof the gate BLOCKs a bad run: this job PASSES only when the CLI exits 3.
+  # This is what stops a failing agent run from merging in a real consumer repo.
+  gate-blocks-bad-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run build
+      - name: A failing run must exit 3 (BLOCK)
+        run: |
+          set +e
+          node dist/cli/index.js eval \
+            --config examples/outbound.config.json \
+            --run fixtures/outbound/failing.json \
+            --rules-only
+          code=$?
+          echo "CLI exit code: $code"
+          if [ "$code" -ne 3 ]; then
+            echo "Expected exit 3 (BLOCK), got $code"
+            exit 1
+          fi
+          echo "Gate correctly BLOCKed the failing run."

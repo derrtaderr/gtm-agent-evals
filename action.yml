@@ -1,0 +1,76 @@
+name: "GTM Agent Eval Gate"
+description: >-
+  Run the gtm-agent-evals gate on an agent run and block the job on BLOCK
+  (exit 3) or, when a golden store + fresh runs are supplied, on REGRESSION
+  (exit 4). Deterministic rules run keylessly; the LLM rubric needs
+  ANTHROPIC_API_KEY (omit it and pass rules-only for a keyless rules gate).
+branding:
+  icon: "shield"
+  color: "green"
+
+inputs:
+  config:
+    description: "Path to the EvalConfig JSON."
+    required: true
+  run:
+    description: "Path to the AgentRun JSON to evaluate."
+    required: true
+  rules-only:
+    description: "Run deterministic rules only, skipping the LLM rubric (no API key needed)."
+    required: false
+    default: "false"
+  anthropic-api-key:
+    description: "Anthropic API key for the rubric. Leave empty with rules-only=true."
+    required: false
+    default: ""
+  store:
+    description: "Optional golden store (JSONL) to replay for regression."
+    required: false
+    default: ""
+  runs:
+    description: "Optional fresh-runs JSON ([{run, verdict}]) to replay against the store."
+    required: false
+    default: ""
+  telemetry:
+    description: "Optional JSONL path to append a TelemetryEvent to."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    # A consumer replaces these two steps with `npx --yes gtm-agent-evals@latest`
+    # in the run steps below. This example builds the CLI from the action's own
+    # checkout so the repo's CI exercises the real bin.
+    - name: Install and build gtm-agent-evals
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci
+        npm run build
+
+    - name: Eval gate
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+      run: |
+        CLI="node ${{ github.action_path }}/dist/cli/index.js"
+        ARGS=(eval --config "${{ inputs.config }}" --run "${{ inputs.run }}")
+        if [ "${{ inputs.rules-only }}" = "true" ]; then ARGS+=(--rules-only); fi
+        if [ -n "${{ inputs.telemetry }}" ]; then ARGS+=(--telemetry "${{ inputs.telemetry }}"); fi
+        echo "Running: $CLI ${ARGS[*]}"
+        $CLI "${ARGS[@]}"
+
+    - name: Regression gate
+      # Only runs when both a golden store and fresh runs are provided.
+      if: ${{ inputs.store != '' && inputs.runs != '' }}
+      shell: bash
+      run: |
+        CLI="node ${{ github.action_path }}/dist/cli/index.js"
+        echo "Running: $CLI regress --store ${{ inputs.store }} --runs ${{ inputs.runs }}"
+        $CLI regress --store "${{ inputs.store }}" --runs "${{ inputs.runs }}"
