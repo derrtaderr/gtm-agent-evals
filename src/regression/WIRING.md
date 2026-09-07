@@ -57,6 +57,10 @@ append-friendly.
 - `id` is derived by `goldenId(archetype, input)` = `` `${archetype}-${sha256(archetype\0input)[:16]}` ``,
   so re-recording the same case is idempotent. Override with `RecordOptions.id`.
 - A missing store file reads as an empty store (`[]`), never an error.
+- `saveGolden` writes **atomically**: it writes a sibling temp file then `rename`s it over
+  the target (atomic on the same filesystem), so a crash mid-write can never corrupt the
+  committed CI golden store — a reader sees either the old store or the fully-written new
+  one, never a torn file.
 - Default path convention for the CLI: `goldens.jsonl` in the repo root (CLI lane's call).
 
 Example line (formatted here for reading; on disk it is one line):
@@ -69,10 +73,17 @@ Example line (formatted here for reading; on disk it is one line):
 
 `classify` / `regressAll` return a `RegressionResult { goldenId, status, diffs }`.
 
-- **REGRESSION** — was PASS now BLOCK, **or** a scored dimension present in both verdicts
-  dropped by more than `scoreTolerance` (default `1.0`, i.e. `goldenScore - freshScore > tol`).
-  This is the fail-loud case: the CLI `regress` command must exit non-zero when any result
-  is REGRESSION.
+- **REGRESSION** — was PASS now BLOCK, **or** a scored dimension eroded past tolerance.
+  A dimension eroded when it dropped by more than `scoreTolerance` (default `1.0`, i.e.
+  `goldenScore - freshScore > tol` — strictly greater; a drop of exactly the tolerance is
+  within budget) **or when it VANISHED**: the golden scored it but the fresh verdict omits
+  it (undefined, no `scores` object, or `scores: {}`). A vanished dimension is the
+  largest possible drop (drop-to-zero semantics) — the agent, or the scorer, stopped
+  producing that quality signal, and the gate must fail loud, never silently MATCH. A
+  dimension the golden never scored cannot regress. Each regressed dimension is surfaced in
+  `diffs` as a `scores.<dim>` entry (`RegressionResult` has no free-text `reasons` field, so
+  the named dimension rides the `diffs` channel). This is the fail-loud case: the CLI
+  `regress` command must exit non-zero when any result is REGRESSION.
 - **MATCH** — same verdict status **and** no trajectory diffs (identical, or only-metadata
   differences — `diffTrajectory` deliberately ignores `metadata`).
 - **DRIFT** — any other non-regressive outcome: the trajectory (or a still-passing verdict)
@@ -84,8 +95,9 @@ Example line (formatted here for reading; on disk it is one line):
 
 ### Loud-failure / never-silent-MATCH boundaries
 
-- `classify` **throws** on a mismatched input (golden.input !== freshRun.input): the caller
-  paired the wrong run with this golden.
+- `classify` **throws** on a mismatched input (golden.input !== freshRun.input) **or a
+  mismatched archetype** (golden.archetype !== freshRun.archetype): the caller paired the
+  wrong run with this golden.
 - `regressAll` matches fresh runs to goldens by `(archetype, input)`, not position, so
   `freshRuns[i]` pairs with `freshVerdicts[i]` but order across the arrays is free. A golden
   with **no matching fresh run** yields an explicit **REGRESSION** (a lost trajectory is a

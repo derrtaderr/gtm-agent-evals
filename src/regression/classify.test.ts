@@ -99,4 +99,84 @@ describe("classify", () => {
     const wrongRun: AgentRun = { ...baseRun, input: "a completely different task" };
     expect(() => classify(goldenPass, wrongRun, passVerdict)).toThrow(/input/i);
   });
+
+  it("throws loudly on mismatched archetype rather than silently comparing", () => {
+    const wrongRun: AgentRun = { ...baseRun, archetype: "research" };
+    expect(() => classify(goldenPass, wrongRun, passVerdict)).toThrow(/archetype/i);
+  });
+});
+
+describe("classify — a vanished scored dimension is the worst regression", () => {
+  const twoDimVerdict: Verdict = {
+    status: "PASS",
+    violations: [],
+    scores: { relevance: 9, specificity: 9 },
+    reasons: ["clean"],
+  };
+  const goldenTwoDim = record(baseRun, twoDimVerdict, {
+    recordedAt: "2026-09-06T00:00:00.000Z",
+  });
+
+  it("REGRESSION — a dimension the golden scored is absent from the fresh verdict", () => {
+    const freshVerdict: Verdict = {
+      status: "PASS",
+      violations: [],
+      scores: { relevance: 9 }, // specificity vanished
+      reasons: ["still ok"],
+    };
+    const result = classify(goldenTwoDim, { ...baseRun }, freshVerdict);
+    expect(result.status).toBe("REGRESSION");
+  });
+
+  it("names the vanished dimension in the diffs as scores.<dim>", () => {
+    const freshVerdict: Verdict = {
+      status: "PASS",
+      violations: [],
+      scores: { relevance: 9 },
+      reasons: ["still ok"],
+    };
+    const result = classify(goldenTwoDim, { ...baseRun }, freshVerdict);
+    expect(result.diffs).toContainEqual({
+      field: "scores.specificity",
+      golden: 9,
+      actual: undefined,
+    });
+  });
+
+  it("REGRESSION — the fresh verdict has no scores at all while the golden did", () => {
+    const freshVerdict: Verdict = {
+      status: "PASS",
+      violations: [],
+      reasons: ["no scores emitted"],
+    };
+    const result = classify(goldenTwoDim, { ...baseRun }, freshVerdict);
+    expect(result.status).toBe("REGRESSION");
+  });
+
+  it("REGRESSION — the fresh verdict has an empty scores object", () => {
+    const freshVerdict: Verdict = {
+      status: "PASS",
+      violations: [],
+      scores: {},
+      reasons: ["empty scores"],
+    };
+    const result = classify(goldenTwoDim, { ...baseRun }, freshVerdict);
+    expect(result.status).toBe("REGRESSION");
+  });
+
+  it("does NOT regress when the golden had no scores to begin with", () => {
+    const noScoreGolden = record(
+      baseRun,
+      { status: "PASS", violations: [], reasons: ["ok"] },
+      { recordedAt: "2026-09-06T00:00:00.000Z" },
+    );
+    const freshVerdict: Verdict = {
+      status: "PASS",
+      violations: [],
+      scores: { relevance: 9 },
+      reasons: ["ok"],
+    };
+    const result = classify(noScoreGolden, { ...baseRun }, freshVerdict);
+    expect(result.status).toBe("MATCH");
+  });
 });

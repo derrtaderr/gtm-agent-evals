@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import type { GoldenRecord } from "../types.js";
 
@@ -31,5 +37,11 @@ export function saveGolden(golden: GoldenRecord, path: string): void {
   const dir = dirname(path);
   if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
   const body = existing.map((g) => JSON.stringify(g)).join("\n") + "\n";
-  writeFileSync(path, body, "utf8");
+  // Atomic write: a full-file overwrite that crashes mid-write would corrupt the
+  // committed CI golden store. Write a sibling temp file, then rename it over the
+  // target — rename is atomic on the same filesystem, so a reader sees either the old
+  // store or the fully-written new one, never a torn file.
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmp, body, "utf8");
+  renameSync(tmp, path);
 }

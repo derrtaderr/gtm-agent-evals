@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveGolden, loadGoldens, loadGolden } from "./store.js";
@@ -57,5 +57,13 @@ describe("golden store (JSONL)", () => {
     saveGolden(g, store);
     expect(loadGolden(store, g.id)?.input).toBe("task one");
     expect(loadGolden(store, "nope")).toBeUndefined();
+  });
+
+  it("writes atomically — leaves no temp file behind and the store stays parseable", () => {
+    saveGolden(record(mkRun("a"), pass), store);
+    saveGolden(record(mkRun("b"), pass), store); // overwrite path
+    const leftovers = readdirSync(dir).filter((f) => f !== "goldens.jsonl");
+    expect(leftovers).toEqual([]);
+    expect(loadGoldens(store)).toHaveLength(2);
   });
 });
