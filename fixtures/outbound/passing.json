@@ -1,0 +1,6 @@
+{
+  "archetype": "outbound",
+  "input": "Write a cold email to the VP of RevOps at Northwind Robotics about our routing tool.",
+  "output": "Hi Dana,\n\nNorthwind Robotics just posted three RevOps roles in a month, which usually means routing is getting hand-built in spreadsheets faster than anyone can maintain it.\n\nWe give teams a routing layer that scores and assigns inbound in seconds, so a rep never sits on a hot lead.\n\nWorth a quick call next Tuesday to see if it fits?\n\nJason",
+  "steps": []
+}
