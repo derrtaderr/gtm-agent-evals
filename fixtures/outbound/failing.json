@@ -1,6 +1,6 @@
 {
   "archetype": "outbound",
   "input": "Write a cold email to the VP of RevOps at Northwind Robotics about our routing tool.",
-  "output": "Hi {{firstName}},\n\nI came across [company] and was really impressed by what you are building over there.\n\nWe help companies like [company] do more with less by leveraging cutting-edge AI to unlock synergies across the funnel.\n\nLet me know if any of this resonates.",
+  "output": "Hi {{firstName}},\n\nI came across [company] and was really impressed by what you are building over there in %industry%.\n\nWe help companies like [company] do more with less by leveraging cutting-edge AI to unlock synergies across the funnel.\n\nLet me know if any of this resonates.",
   "steps": []
 }

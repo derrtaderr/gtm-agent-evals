@@ -52,8 +52,8 @@ Config id: `content-default`, `gateN: 5`.
 
 | rule name | severity | flags |
 | --- | --- | --- |
-| `no-unfilled-placeholder` | block | leftover merge tokens: `{{firstName}}`, `{role}`, `[company]`, `<company>` (the fabricated-personalization footgun) |
-| `required-cta` | block | no call-to-action marker present (`params.markers: string[]` overrides the default marker list) |
+| `no-unfilled-placeholder` | block | leftover merge tokens across styles: `{{firstName}}`, `{role}`, `[company]`, `<company>`, `%firstName%` (Outreach/Salesloft), `((company))`, `$role$` — the fabricated-personalization footgun. A real `$4.2M` figure or `30%` is not a token. |
+| `required-cta` | block | no explicit call-to-action. Counts a CTA only as (A) an imperative-initial ask (`Reply…`, `Book a time`, `Grab 15…`) or (B) a question carrying a meeting/response marker. `params.markers: string[]` overrides the question markers, `params.imperatives: string[]` the imperative verbs. |
 | `length-cap` | warn | output over `params.maxWords` (default 150) |
 
 Rubric dimensions: `relevance`, `specificity` (threshold 7).
@@ -80,8 +80,8 @@ NLI checker — the LLM rubric (`groundedness`) is the second layer.
 Lane A's `runRules` should forward each `RuleConfig.params` to the RuleFn as the
 second argument (as the reference `gtm-content-evals` registry does). The rules
 that read params: `banned-phrases` (`{ phrases }`), `required-cta`
-(`{ markers }`), `length-cap` (`{ maxWords }`). All params are optional; every
-rule has a sane default and the two research rules ignore params.
+(`{ markers }`, `{ imperatives }`), `length-cap` (`{ maxWords }`). All params are
+optional; every rule has a sane default and the two research rules ignore params.
 
 ## Examples (CLI targets)
 

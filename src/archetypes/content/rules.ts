@@ -1,7 +1,7 @@
 // Content archetype rules, ported from the public gtm-content-evals reference
 // implementation and lifted from `text: string` to `AgentRun.output`. Each rule
 // is a pure function over the run; none mutate it. Severity is `block` for every
-// content rule — these are voice violations Jason will not ship over.
+// content rule — these are voice violations that should stop a publish.
 
 import type { AgentRun, RuleFn, Violation } from "../../types.js";
 

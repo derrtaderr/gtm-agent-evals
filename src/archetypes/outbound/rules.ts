@@ -9,10 +9,13 @@ import type { AgentRun, RuleFn, Violation } from "../../types.js";
 // <company>. Applied in order, consuming each matched region so the nested
 // {{...}} form is not double-counted by the single-brace pattern.
 const PLACEHOLDER_PATTERNS: RegExp[] = [
-  /\{\{[^}]+\}\}/g,
-  /\{[^}{]+\}/g,
-  /\[[^\]]+\]/g,
-  /<[a-zA-Z][^>]*>/g,
+  /\{\{[^}]+\}\}/g, // {{firstName}} (Handlebars/HeyReach)
+  /\{[^}{]+\}/g, // {role}
+  /\[[^\]]+\]/g, // [company]
+  /<[a-zA-Z][^>]*>/g, // <company>
+  /%[a-zA-Z][^%]*%/g, // %firstName% (Outreach/Salesloft) — not "30%"
+  /\(\([^)]+\)\)/g, // ((company))
+  /\$[a-zA-Z][^$]*\$/g, // $role$ — not a "$4.2M" figure
 ];
 
 /** Flags any unfilled merge token left in the output. */

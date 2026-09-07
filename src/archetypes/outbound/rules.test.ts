@@ -49,6 +49,20 @@ describe("noUnfilledPlaceholder", () => {
       await noUnfilledPlaceholder(run("Hi Dana, Northwind Robotics caught my eye.")),
     ).toEqual([]);
   });
+  it("flags Outreach/Salesloft %field%, (( )) and $field$ merge styles", async () => {
+    const v = await noUnfilledPlaceholder(
+      run("Hi %firstName%, saw ((company)) is hiring a $role$."),
+    );
+    expect(v).toHaveLength(3);
+    expect(v.every((x) => x.rule === "no-unfilled-placeholder")).toBe(true);
+  });
+  it("does not mistake a real dollar figure or percentage for a token", async () => {
+    expect(
+      await noUnfilledPlaceholder(
+        run("You raised $4.2M and grew 30% last year."),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("requiredCTA", () => {

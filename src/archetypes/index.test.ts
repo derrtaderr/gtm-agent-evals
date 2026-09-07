@@ -23,7 +23,6 @@ describe("archetypes barrel", () => {
   it("each entry carries rules, a config, and a rubric", () => {
     for (const [id, entry] of Object.entries(archetypes)) {
       expect(entry.config.archetype).toBe(id);
-      expect(entry.rules).toBe(entry.config.rubric ? entry.rules : entry.rules);
       expect(Object.keys(entry.rules).length).toBeGreaterThan(0);
       expect(entry.rubric.dimensions.length).toBeGreaterThan(0);
       expect(entry.config.rubric).toBe(entry.rubric);
