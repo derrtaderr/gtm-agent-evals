@@ -58,13 +58,19 @@ verdictHistory(events: TelemetryEvent[], configId: string): VerdictStatus[]   //
 autonomyStreak(events: TelemetryEvent[], configId: string): number            // consecutive-PASS tail
 ```
 
-`verdictHistory` and `autonomyStreak` order by **parsed time** (`Date.parse` on
-each `timestamp`), not by lexical string comparison, so equal instants written
-with different UTC offsets (`+05:00` vs `Z`) or fractional precision (`…00Z` vs
-`…00.500Z`) sort correctly. An **unparseable** timestamp throws, naming the
-offending value, rather than sorting to `NaN` and landing arbitrarily. Two events
-sharing the exact same parsed instant keep their input (append) order.
-`eventsByConfig` does not sort — it preserves input order.
+`verdictHistory` and `autonomyStreak` order by **parsed time**, not by lexical
+string comparison, so equal instants written with different UTC offsets (`+05:00`
+vs `Z`) or fractional precision (`…00Z` vs `…00.500Z`) sort correctly. Each
+`timestamp` must be **strict ISO-8601 carrying an explicit timezone** (a trailing
+`Z` or `±HH:MM` offset); a timezone-less string like `2026-09-06T00:00:00` is
+**refused**, not parsed — `Date.parse` would read it as machine-local time and
+make the autonomy streak depend on the reader's timezone. That same gate rejects
+over-permissive non-ISO inputs (`"0"`, `"Sept 6 2026"`, date-only `"2026-02-30"`)
+and any unparseable value; each throws naming the offending value and event
+rather than sorting to `NaN` and landing arbitrarily. A normal
+`new Date().toISOString()` value (always `Z`) passes. Two events sharing the exact
+same parsed instant keep their input (append) order. `eventsByConfig` does not
+sort — it preserves input order.
 
 ## JSONL line format
 
@@ -143,7 +149,7 @@ parsed JSONL with no server.
 
 ## Tests
 
-`npm test` (vitest). 30 tests across 5 files, all green. Notable guards:
+`npm test` (vitest). 43 tests across 5 files, all green. Notable guards:
 
 - Append-safety: `jsonl.test.ts` → "appends after existing lines without
   truncating prior events" (pre-seeds a file, appends two, asserts all three
