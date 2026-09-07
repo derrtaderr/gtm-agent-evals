@@ -122,4 +122,42 @@ describe("time ordering (parsed time, not lexical string sort)", () => {
     expect(() => autonomyStreak(events, "cfg-a")).toThrowError(/not-a-date/);
     expect(() => verdictHistory(events, "cfg-a")).toThrowError(/not-a-date/);
   });
+
+  it("throws on a timezone-LESS timestamp (would parse as machine-local time)", () => {
+    // No Z, no offset. Date.parse reads this as LOCAL time per the ES spec, so
+    // the streak would differ by the reader's timezone. Must be refused, not parsed.
+    const events = [
+      evtTs("cfg-a", "PASS", "2026-09-06T10:00:00Z", "ok"),
+      evtTs("cfg-a", "PASS", "2026-09-06T00:00:00", "tzless"),
+    ];
+    expect(() => autonomyStreak(events, "cfg-a")).toThrowError(/2026-09-06T00:00:00/);
+    expect(() => verdictHistory(events, "cfg-a")).toThrowError(/2026-09-06T00:00:00/);
+  });
+
+  it("throws on over-permissive non-ISO strings Date.parse would otherwise accept", () => {
+    for (const bad of ["0", "Sept 6 2026", "2026-02-30"]) {
+      const events = [
+        evtTs("cfg-a", "PASS", "2026-09-06T10:00:00Z", "ok"),
+        evtTs("cfg-a", "PASS", bad, "bad"),
+      ];
+      expect(() => autonomyStreak(events, "cfg-a"), `expected "${bad}" to throw`).toThrowError();
+    }
+  });
+
+  it("still accepts a real ISO Z timestamp from new Date().toISOString()", () => {
+    const iso = new Date().toISOString(); // always ...Z
+    const events = [evtTs("cfg-a", "PASS", iso, "now")];
+    expect(() => autonomyStreak(events, "cfg-a")).not.toThrow();
+    expect(autonomyStreak(events, "cfg-a")).toBe(1);
+  });
+
+  it("still orders a valid Z and +05:00 pair by true time", () => {
+    // +05:00 event is truly latest (10:00Z) and PASS; keep the offset fix green.
+    const events = [
+      evtTs("cfg-a", "PASS", "2026-09-06T15:00:00+05:00", "P"), // 10:00Z
+      evtTs("cfg-a", "BLOCK", "2026-09-06T09:00:00Z", "B"), // 09:00Z
+    ];
+    expect(autonomyStreak(events, "cfg-a")).toBe(1);
+    expect(verdictHistory(events, "cfg-a")).toEqual(["BLOCK", "PASS"]);
+  });
 });

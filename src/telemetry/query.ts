@@ -40,14 +40,35 @@ export function autonomyStreak(events: TelemetryEvent[], configId: string): numb
 function chronological(events: TelemetryEvent[]): TelemetryEvent[] {
   return [...events]
     .map((e) => {
-      const t = Date.parse(e.timestamp);
-      if (Number.isNaN(t)) {
-        throw new Error(
-          `telemetry query: unparseable timestamp "${e.timestamp}" on event ${e.runId} (config ${e.configId})`,
-        );
-      }
+      const t = parseInstant(e.timestamp, e);
       return { e, t };
     })
     .sort((a, b) => a.t - b.t)
     .map(({ e }) => e);
+}
+
+// Strict ISO-8601 with an EXPLICIT timezone. The trailing `Z` or `±HH:MM` is
+// mandatory: a timezone-less string like "2026-09-06T00:00:00" is read as
+// machine-LOCAL time by Date.parse, which would make the autonomy streak depend
+// on the reader's timezone. Requiring the offset also rejects Date.parse's
+// over-permissive inputs ("0", "Sept 6 2026", date-only "2026-02-30").
+const ISO_WITH_TZ = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/** Parse a timestamp to a millisecond instant, throwing (naming the value and
+ *  the event) unless it is strict ISO-8601 carrying an explicit timezone. A
+ *  wrong or absent timezone is refused, never silently interpreted as local. */
+function parseInstant(timestamp: string, e: TelemetryEvent): number {
+  if (!ISO_WITH_TZ.test(timestamp)) {
+    throw new Error(
+      `telemetry query: timestamp "${timestamp}" on event ${e.runId} (config ${e.configId}) ` +
+        `is not strict ISO-8601 with an explicit timezone (require a trailing Z or ±HH:MM offset)`,
+    );
+  }
+  const t = Date.parse(timestamp);
+  if (Number.isNaN(t)) {
+    throw new Error(
+      `telemetry query: unparseable timestamp "${timestamp}" on event ${e.runId} (config ${e.configId})`,
+    );
+  }
+  return t;
 }
