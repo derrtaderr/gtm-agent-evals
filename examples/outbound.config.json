@@ -1,0 +1,16 @@
+{
+  "id": "outbound-default",
+  "archetype": "outbound",
+  "rules": [
+    { "name": "no-unfilled-placeholder" },
+    { "name": "required-cta" },
+    { "name": "length-cap", "params": { "maxWords": 150 } }
+  ],
+  "rubric": {
+    "dimensions": [
+      { "name": "relevance", "threshold": 7 },
+      { "name": "specificity", "threshold": 7 }
+    ]
+  },
+  "gateN": 5
+}

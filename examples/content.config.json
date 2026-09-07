@@ -1,0 +1,28 @@
+{
+  "id": "content-default",
+  "archetype": "content",
+  "rules": [
+    { "name": "no-em-dash" },
+    { "name": "no-body-colon" },
+    { "name": "no-binary-corrective" },
+    {
+      "name": "banned-phrases",
+      "params": {
+        "phrases": [
+          "passionate",
+          "thrilled",
+          "would love",
+          "at the end of the day",
+          "in today's fast-paced"
+        ]
+      }
+    }
+  ],
+  "rubric": {
+    "dimensions": [
+      { "name": "voice-match", "threshold": 7 },
+      { "name": "factual-grounding", "threshold": 7 }
+    ]
+  },
+  "gateN": 5
+}
