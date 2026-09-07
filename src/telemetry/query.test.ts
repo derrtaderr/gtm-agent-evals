@@ -12,6 +12,11 @@ function evt(configId: string, status: VerdictStatus, minute: number, runId = `r
   return { runId, timestamp: ts, configId, archetype: "outbound", verdict: verdict(status) };
 }
 
+// Build an event with an explicit timestamp string, for time-ordering tests.
+function evtTs(configId: string, status: VerdictStatus, ts: string, runId = ts): TelemetryEvent {
+  return { runId, timestamp: ts, configId, archetype: "outbound", verdict: verdict(status) };
+}
+
 describe("eventsByConfig", () => {
   it("returns only events for the given config id", () => {
     const events = [evt("cfg-a", "PASS", 1), evt("cfg-b", "PASS", 2), evt("cfg-a", "BLOCK", 3)];
@@ -74,5 +79,47 @@ describe("autonomyStreak", () => {
 
   it("is zero for a config with no events", () => {
     expect(autonomyStreak([evt("cfg-a", "PASS", 1)], "cfg-x")).toBe(0);
+  });
+});
+
+describe("time ordering (parsed time, not lexical string sort)", () => {
+  it("orders a +offset PASS after a Z BLOCK by actual UTC time (streak 1, not 0)", () => {
+    // P is the true-latest event: 05:00-05:00 == 10:00Z, PASS.
+    // B is 09:00Z, earlier. But P's string ("...T05:00...") lexically sorts
+    // BEFORE B's ("...T09:00...Z"), so a string sort makes BLOCK look most recent
+    // and returns streak 0. Parsed-time ordering must return 1.
+    const events = [
+      evtTs("cfg-a", "PASS", "2026-09-06T05:00:00-05:00", "P"),
+      evtTs("cfg-a", "BLOCK", "2026-09-06T09:00:00Z", "B"),
+    ];
+    expect(autonomyStreak(events, "cfg-a")).toBe(1);
+  });
+
+  it("orders mixed fractional precision by actual time (streak 1, not 0)", () => {
+    // A is 10:00:00.500Z (later), PASS. B is 10:00:00Z (earlier), BLOCK.
+    // Lexically "...00.500Z" < "...00Z" ('.' < 'Z'), so a string sort puts the
+    // PASS first and the BLOCK last, wrongly yielding streak 0.
+    const events = [
+      evtTs("cfg-a", "PASS", "2026-09-06T10:00:00.500Z", "A"),
+      evtTs("cfg-a", "BLOCK", "2026-09-06T10:00:00Z", "B"),
+    ];
+    expect(autonomyStreak(events, "cfg-a")).toBe(1);
+  });
+
+  it("gives the same chronological verdictHistory under offset timestamps", () => {
+    const events = [
+      evtTs("cfg-a", "PASS", "2026-09-06T05:00:00-05:00", "P"), // 10:00Z, latest
+      evtTs("cfg-a", "BLOCK", "2026-09-06T09:00:00Z", "B"), // 09:00Z, earlier
+    ];
+    expect(verdictHistory(events, "cfg-a")).toEqual(["BLOCK", "PASS"]);
+  });
+
+  it("throws naming an unparseable timestamp rather than silently mis-sorting", () => {
+    const events = [
+      evtTs("cfg-a", "PASS", "2026-09-06T10:00:00Z", "ok"),
+      evtTs("cfg-a", "PASS", "not-a-date", "bad"),
+    ];
+    expect(() => autonomyStreak(events, "cfg-a")).toThrowError(/not-a-date/);
+    expect(() => verdictHistory(events, "cfg-a")).toThrowError(/not-a-date/);
   });
 });
