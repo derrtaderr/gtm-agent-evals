@@ -1,6 +1,5 @@
-// Public entry point. Each lane re-exports its surface from here as it lands, so
-// a consumer imports one package. Lane A (engine) exports the spine below;
-// regression / archetypes / telemetry / CLI lanes extend this file.
+// Public entry point. One package, four lanes' surfaces folded in at integration.
+// A consumer imports everything from "gtm-agent-evals".
 export * from "./types.js";
 
 // Lane A — engine spine
@@ -15,3 +14,12 @@ export { scoreRun, parseScores, makeFakeProvider, makeClaudeProvider } from "./s
 export type { ClaudeSend, ClaudeProviderOpts } from "./scoring/index.js";
 export { evaluateGate } from "./gate/index.js";
 export { computeStreak, clearedForAutonomy, readRuns, appendRun } from "./runlog/index.js";
+
+// Lane C — three worked GTM archetypes (content, outbound, research)
+export * from "./archetypes/index.js";
+
+// Lane B — golden-trajectory regression
+export * from "./regression/index.js";
+
+// Lane D — vendor-agnostic telemetry
+export * from "./telemetry/index.js";
