@@ -3,19 +3,17 @@
 An open-source **eval + regression platform for GTM agents** (content, outbound,
 research, deal-coaching). Deterministic rules, an LLM rubric that fails closed, an
 N-clean-runs autonomy gate, golden-trajectory regression, vendor-agnostic
-telemetry, a CI gate, and a dashboard. The strongest single hireable proof point
-for an AI-first GTM Engineer: it answers "what have you shipped that is
-production-grade" with a repo a stranger clones and runs.
+telemetry, a CI gate, and a dashboard. A repo a stranger clones and runs: it
+answers "does this agent's output clear a bar, and is it still clearing it"
+with running code rather than a rubric in a doc.
 
-Row 33 of the build queue, "go bigger" scope (Jason, 2026-09-06): the full
-platform across two days, telemetry backend and dashboard included.
+Built 2026-09-06 as one two-day push: the full platform, telemetry backend and
+dashboard included, as parallel lanes against this spec.
 
 - **Language:** TypeScript. **Test runner:** vitest. **License:** MIT.
-- **Repo:** `github.com/derrtaderr/gtm-agent-evals` (Jason's personal GitHub, not
-  Magnetiz's). Private until a standalone publish-yes; this is a personal build,
-  not Magnetiz IP.
-- **Not Magnetiz IP.** No client-specific rules, no proprietary rubrics. Eval
-  only; the agents themselves are the consumer's choice.
+- **Repo:** `github.com/derrtaderr/gtm-agent-evals`.
+- **No client-specific rules, no proprietary rubrics.** Eval only; the agents
+  themselves are the consumer's choice. Every fixture is synthetic.
 
 ## Prior art this platform stands on (checked 2026-09-06, do not rebuild)
 
