@@ -40,17 +40,22 @@ export const noUnfilledPlaceholder: RuleFn = (run: AgentRun): Violation[] => {
   return violations;
 };
 
-// A real CTA is an explicit ask, not a loose substring. Two forms count:
+// required-cta stays a BLOCK: for cold email "did the writer ask for a next
+// step" is a tractable, decidable-enough gate (unlike numeric grounding). A real
+// CTA is an explicit ask, not a loose substring. Three forms count:
 //
-//  (A) an imperative ask: a sentence/line that STARTS with a call-to-action verb
-//      ("Reply if interested.", "Grab 15 minutes.", "Book a time."). Substrings
-//      buried mid-sentence ("worth a read") do not count.
-//  (B) an inviting question: the output asks a question AND carries a
-//      meeting/response marker ("Worth a quick call next week?").
+//  (A) an imperative ASK: a clause that STARTS with a CTA verb AND carries an
+//      ask signal directed at the reader (a pronoun like "you/your", a time
+//      token, "here/link", or a conditional "if ..."). This distinguishes
+//      "Reply if interested." / "Grab 15 minutes on my calendar." (asks) from
+//      "Download volumes tripled." / "Schedule slippage was the theme."
+//      (verb-initial statements, verb used as a noun — NOT asks).
+//  (B) an inviting QUESTION: a "?"-bearing sentence carrying a time/meeting/
+//      response marker ("Would 15 minutes Thursday work?").
+//  (C) an explicit caller-supplied marker: when the caller passes params.markers,
+//      those are trusted as sufficient substrings (they opted in).
 //
-// Both lists are overridable via params. Detection is deliberately conservative:
-// a genuine no-CTA send must never clear this block rule, which is the failure
-// the substring version allowed.
+// Both default lists are overridable via params.
 
 const DEFAULT_CTA_IMPERATIVES: string[] = [
   "reply",
@@ -87,7 +92,34 @@ const DEFAULT_CTA_QUESTION_MARKERS: string[] = [
   "grab time",
   "quick call",
   "catch up",
+  "minutes",
+  "min ",
+  "work for you",
+  "works for you",
+  "work?",
+  "chance",
+  "right place",
+  "send",
+  "overview",
+  "call",
+  "chat",
+  "demo",
+  "next week",
+  "this week",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
 ];
+
+// A reader-directed ask signal in the REST of an imperative clause (after the
+// verb). Its presence is what separates a real ask from a verb-initial noun
+// phrase.
+const ASK_SIGNAL =
+  /\b(me|my|us|our|you|your|minutes?|\d+\s*min|calendar|link|here|below|back|call|chat|demo|time|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/;
 
 /** Blocks when the output carries no explicit call-to-action. */
 export const requiredCTA: RuleFn = (
@@ -97,32 +129,45 @@ export const requiredCTA: RuleFn = (
   const p = params as
     | { markers?: string[]; imperatives?: string[] }
     | undefined;
-  const questionMarkers = p?.markers ?? DEFAULT_CTA_QUESTION_MARKERS;
+  const suppliedMarkers = p?.markers;
+  const questionMarkers = suppliedMarkers ?? DEFAULT_CTA_QUESTION_MARKERS;
   const imperatives = p?.imperatives ?? DEFAULT_CTA_IMPERATIVES;
   const lower = run.output.toLowerCase();
 
-  // (A) imperative ask at the start of any line or sentence.
+  // (C) explicit caller-supplied markers are trusted substrings.
+  if (suppliedMarkers && suppliedMarkers.some((m) => lower.includes(m.toLowerCase()))) {
+    return [];
+  }
+
+  // (A) imperative ASK: verb at the clause start PLUS a reader-directed signal
+  // (or a conditional "if ...") in the remainder.
   const clauses = run.output
     .split(/(?<!\d)[.!?\n]+(?!\d)/)
     .map((c) => c.trim().toLowerCase())
     .filter(Boolean);
-  const hasImperative = clauses.some((c) =>
-    imperatives.some(
-      (verb) => c === verb || c.startsWith(verb + " ") || c.startsWith(verb + ","),
-    ),
+  const hasImperativeAsk = clauses.some((c) =>
+    imperatives.some((verb) => {
+      const starts =
+        c === verb || c.startsWith(verb + " ") || c.startsWith(verb + ",");
+      if (!starts) return false;
+      const rest = c.slice(verb.length).trim();
+      return rest === "" || rest.startsWith("if ") || ASK_SIGNAL.test(rest);
+    }),
   );
 
-  // (B) inviting question: a "?" plus a meeting/response marker.
-  const hasInvitingQuestion =
-    lower.includes("?") &&
-    questionMarkers.some((m) => lower.includes(m.toLowerCase()));
+  // (B) inviting question: a "?"-bearing sentence carrying a meeting marker.
+  const questionSentences = run.output.match(/[^.?!\n]*\?/g) ?? [];
+  const hasInvitingQuestion = questionSentences.some((s) => {
+    const sl = s.toLowerCase();
+    return questionMarkers.some((m) => sl.includes(m.toLowerCase()));
+  });
 
-  if (hasImperative || hasInvitingQuestion) return [];
+  if (hasImperativeAsk || hasInvitingQuestion) return [];
   return [
     {
       rule: "required-cta",
       message:
-        "No explicit call-to-action found. A cold email needs a concrete ask (an imperative like \"Reply\"/\"Book a time\", or a question inviting a call).",
+        "No explicit call-to-action found. A cold email needs a concrete ask (an imperative like \"Reply if interested\"/\"Book a time\", or a question inviting a call).",
       severity: "block",
     },
   ];

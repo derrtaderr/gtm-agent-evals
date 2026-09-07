@@ -94,6 +94,51 @@ describe("requiredCTA", () => {
       [],
     );
   });
+
+  // Fix wave 2 FIX 2 — soft-question asks must PASS. A "?"-bearing sentence
+  // carrying a time/meeting/response marker is a real CTA.
+  const softAsks = [
+    "Would 15 minutes Thursday work?",
+    "Thursday at 2 work for you?",
+    "Any chance you're around Thursday?",
+    "Mind if I send a quick overview?",
+    "Is your team the right place to start?",
+  ];
+  for (const ask of softAsks) {
+    it(`passes the soft-question ask: "${ask}"`, async () => {
+      expect(await requiredCTA(run(ask))).toEqual([]);
+    });
+  }
+
+  // Fix wave 2 FIX 2 — verb-initial homographs (verb used as a noun/statement,
+  // no ask directed at the reader) must FLAG.
+  const verbInitialStatements = [
+    "Download volumes tripled last quarter.",
+    "Connect the two systems and errors dropped.",
+    "Schedule slippage was the theme.",
+    "Register growth was flat.",
+  ];
+  for (const s of verbInitialStatements) {
+    it(`flags the verb-initial statement (no ask): "${s}"`, async () => {
+      const v = await requiredCTA(run(s));
+      expect(v).toHaveLength(1);
+      expect(v[0].rule).toBe("required-cta");
+      expect(v[0].severity).toBe("block");
+    });
+  }
+
+  // Fix wave 2 FIX 3 — pin "imperative at the clause start, not a loose
+  // substring" so a future refactor to .includes() cannot silently regress.
+  it("does not accept an imperative verb used mid-sentence as a noun", async () => {
+    const v = await requiredCTA(run("Our reply rates doubled after the change."));
+    expect(v).toHaveLength(1);
+    expect(v[0].rule).toBe("required-cta");
+  });
+  it("accepts an imperative ask only when it leads the clause", async () => {
+    expect(await requiredCTA(run("Reply with a time that works for you."))).toEqual(
+      [],
+    );
+  });
 });
 
 describe("lengthCap", () => {
