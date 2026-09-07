@@ -1,0 +1,15 @@
+{
+  "id": "research-default",
+  "archetype": "research",
+  "rules": [
+    { "name": "source-step-present" },
+    { "name": "no-uncited-assertion" }
+  ],
+  "rubric": {
+    "dimensions": [
+      { "name": "citation-quality", "threshold": 7 },
+      { "name": "groundedness", "threshold": 7 }
+    ]
+  },
+  "gateN": 5
+}

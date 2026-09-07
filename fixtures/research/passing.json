@@ -1,0 +1,17 @@
+{
+  "archetype": "research",
+  "input": "Research Acme Freight and summarize funding and headcount for ICP fit.",
+  "output": "Acme Freight looks like a strong fit.\n\nThey raised 12 million dollars in a Series A and now run a team of 40 people across two offices.\n\nA follow-on round of $4.2M landed after revenue grew 3.5x last year.\n\nThat headcount puts them right in our sweet spot.",
+  "steps": [
+    {
+      "kind": "tool_call",
+      "name": "web_search",
+      "content": "Acme Freight funding and headcount"
+    },
+    {
+      "kind": "tool_result",
+      "name": "search_results",
+      "content": "Acme Freight closed a Series A of 12 million in 2024. Company headcount is 40 employees across two offices. A follow-on round of 4.2 million valued the company after revenue grew 3.5x."
+    }
+  ]
+}

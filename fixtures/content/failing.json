@@ -1,0 +1,6 @@
+{
+  "archetype": "content",
+  "input": "Draft a short LinkedIn post about why GTM teams should evaluate their agents.",
+  "output": "I'm passionate about one thing — evaluating GTM agents before they ship.\n\nHere is the truth: it's not about the model, it's about the gate.\n\nMost teams skip this step and pay for it later.",
+  "steps": []
+}

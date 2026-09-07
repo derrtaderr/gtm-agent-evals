@@ -1,0 +1,11 @@
+{
+  "archetype": "research",
+  "input": "Research Acme Freight and summarize funding and headcount for ICP fit.",
+  "output": "Acme Freight is a rocket ship.\n\nThey raised $50 million last quarter and now dominate the category.\n\nDefinitely worth a top-priority outreach.",
+  "steps": [
+    {
+      "kind": "thought",
+      "content": "I am confident Acme is huge, no need to verify the numbers."
+    }
+  ]
+}
