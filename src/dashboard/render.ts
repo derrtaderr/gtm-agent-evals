@@ -100,8 +100,15 @@ function configRow(c: ConfigView): string {
     .map((s) => `<span class="chip ${s === "PASS" ? "pass" : "block"}">${s}</span>`)
     .join(" ");
 
+  // Surface WHY the config is currently blocked. The reason is event-origin
+  // data, so it is escaped before it enters the markup.
+  const reasonLine =
+    c.latestStatus === "BLOCK" && c.latestReason
+      ? `<div class="reason">${escapeHtml(c.latestReason)}</div>`
+      : "";
+
   return `<tr>
-    <td class="mono">${escapeHtml(c.configId)}</td>
+    <td class="mono">${escapeHtml(c.configId)}${reasonLine}</td>
     <td>${escapeHtml(c.archetype)}</td>
     <td>${escapeHtml(String(c.passCount))}/${escapeHtml(String(c.total))} PASS</td>
     <td class="mono">${escapeHtml(String(c.streak))}</td>
@@ -145,6 +152,7 @@ const STYLE = `
   .badge.cleared { color: #74e0a0; }
   .badge.pending { color: #f0cf7a; }
   .history { white-space: normal; }
+  .reason { color: #f28b8b; font-size: 12px; margin-top: 4px; white-space: normal; font-family: -apple-system, sans-serif; }
   .empty { color: #99a0ad; font-style: italic; }
   .foot { margin-top: 40px; color: #5b6472; font-size: 13px; }
 `;

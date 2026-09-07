@@ -82,6 +82,25 @@ describe("buildViewModel per-config", () => {
   });
 });
 
+describe("buildViewModel latestReason", () => {
+  it("carries the chronologically-latest run's reasons for a blocked config", () => {
+    const events = [
+      evt("cfg-a", "PASS", 1),
+      { ...evt("cfg-a", "BLOCK", 2), verdict: { status: "BLOCK" as VerdictStatus, violations: [], reasons: ["blocked: no CTA", "blocked: too long"] } },
+    ];
+    const vm = buildViewModel(events);
+    const a = vm.configs.find((c) => c.configId === "cfg-a")!;
+    expect(a.latestStatus).toBe("BLOCK");
+    expect(a.latestReason).toBe("blocked: no CTA; blocked: too long");
+  });
+
+  it("reports the latest status as PASS with no reason surfaced when the tail passes", () => {
+    const events = [evt("cfg-a", "BLOCK", 1), evt("cfg-a", "PASS", 2)];
+    const a = buildViewModel(events).configs.find((c) => c.configId === "cfg-a")!;
+    expect(a.latestStatus).toBe("PASS");
+  });
+});
+
 describe("buildViewModel regression", () => {
   it("is empty when no regression results are supplied", () => {
     expect(buildViewModel([evt("cfg-a", "PASS", 1)]).regressions).toEqual([]);

@@ -103,6 +103,49 @@ describe("renderDashboard content", () => {
   });
 });
 
+describe("renderDashboard reasons", () => {
+  it("shows the latest reason when a config is currently blocked", () => {
+    const html = renderDashboard(
+      vm({
+        configs: [
+          {
+            configId: "cfg-a",
+            archetype: "outbound",
+            history: ["PASS", "BLOCK"],
+            total: 2,
+            passCount: 1,
+            streak: 0,
+            latestStatus: "BLOCK",
+            latestReason: "blocked: no CTA present",
+          },
+        ],
+      }),
+    );
+    expect(html).toContain("blocked: no CTA present");
+  });
+
+  it("escapes a reason that carries a script tag so it cannot inject (required test)", () => {
+    const html = renderDashboard(
+      vm({
+        configs: [
+          {
+            configId: "cfg-a",
+            archetype: "outbound",
+            history: ["BLOCK"],
+            total: 1,
+            passCount: 0,
+            streak: 0,
+            latestStatus: "BLOCK",
+            latestReason: "blocked: <script>alert(1)</script>",
+          },
+        ],
+      }),
+    );
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+});
+
 describe("renderDashboard escaping", () => {
   it("escapes a config id so it cannot inject markup", () => {
     const html = renderDashboard(

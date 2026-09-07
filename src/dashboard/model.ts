@@ -28,6 +28,10 @@ export type ConfigView = {
   gateN?: number;
   /** whether the streak has cleared gateN; undefined when gateN is unknown */
   clearedForAutonomy?: boolean;
+  /** the chronologically-latest run's status for this config */
+  latestStatus?: VerdictStatus;
+  /** the latest run's reasons, joined; shown when the config is currently blocked */
+  latestReason?: string;
 };
 
 export type RegressionView = {
@@ -71,9 +75,17 @@ export function buildViewModel(
 
   const configs: ConfigView[] = configIds.map((configId) => {
     const own = eventsByConfig(events, configId);
-    const history = verdictHistory(events, configId);
+    const history = verdictHistory(events, configId); // chronological (Lane D), also validates timestamps
     const streak = autonomyStreak(events, configId);
     const gateN = gateNByConfig[configId];
+    // Newest event for this config, by parsed time. This is a max-by selection,
+    // not a reimplementation of streak/history (those come from Lane D above);
+    // the timestamps were already validated by the verdictHistory call.
+    const newest = own.reduce<TelemetryEvent | undefined>((latest, e) => {
+      if (!latest) return e;
+      return Date.parse(e.timestamp) >= Date.parse(latest.timestamp) ? e : latest;
+    }, undefined);
+    const latestStatus = history[history.length - 1];
     return {
       configId,
       archetype: own[0]?.archetype ?? "",
@@ -84,6 +96,8 @@ export function buildViewModel(
       gateN,
       clearedForAutonomy:
         gateN === undefined ? undefined : clearedForAutonomy(streak, gateN),
+      latestStatus,
+      latestReason: newest ? newest.verdict.reasons.join("; ") : undefined,
     };
   });
 

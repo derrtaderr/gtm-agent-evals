@@ -23,3 +23,6 @@ export * from "./regression/index.js";
 
 // Lane D — vendor-agnostic telemetry
 export * from "./telemetry/index.js";
+
+// Lane F — self-contained static dashboard over the telemetry store
+export * from "./dashboard/index.js";
