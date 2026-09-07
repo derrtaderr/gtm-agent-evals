@@ -164,3 +164,10 @@ still shown; the gate cell reads `—`.
 
 Synthetic fixtures only (invented `cfg-*` / `golden-*` ids). No real client,
 vault path, or secret in any file.
+
+## Regression rows and telemetry configs are independent
+
+The regression section renders one row per `RegressionResult` and the per-config
+section renders one row per telemetry config. There is no join, merge, or filter
+between them: a golden with no corresponding telemetry config (or vice versa) is
+intended. The two sections answer different questions and sit side by side by design.

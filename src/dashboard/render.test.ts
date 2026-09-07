@@ -176,4 +176,25 @@ describe("renderDashboard escaping", () => {
     expect(html).not.toContain("<img src=x>");
     expect(html).toContain("&lt;img");
   });
+
+  it("escapes a verdict status in the history chip so it cannot inject markup", () => {
+    const html = renderDashboard(
+      vm({
+        configs: [
+          {
+            configId: "cfg-a",
+            archetype: "outbound",
+            // status is event-origin data; a self-contained renderer must escape
+            // it at its own boundary, not rely on a validator two lanes away.
+            history: ["<img src=x onerror=alert(9)>" as unknown as "BLOCK"],
+            total: 1,
+            passCount: 0,
+            streak: 0,
+          },
+        ],
+      }),
+    );
+    expect(html).not.toContain("<img src=x onerror=alert(9)>");
+    expect(html).toContain("&lt;img src=x onerror=alert(9)&gt;");
+  });
 });

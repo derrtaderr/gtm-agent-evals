@@ -52,5 +52,22 @@ export function readRegressionResults(path: string): RegressionResult[] {
         `got ${parsed === null ? "null" : typeof parsed}`,
     );
   }
+  const VALID_STATUS = new Set(["MATCH", "DRIFT", "REGRESSION"]);
+  parsed.forEach((item: unknown, i: number) => {
+    const r = item as Record<string, unknown>;
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      typeof r.goldenId !== "string" ||
+      typeof r.status !== "string" ||
+      !VALID_STATUS.has(r.status) ||
+      !Array.isArray(r.diffs)
+    ) {
+      throw new Error(
+        `dashboard: regression results file "${path}" item #${i} is not a valid RegressionResult ` +
+          `(needs a goldenId string, a status of MATCH/DRIFT/REGRESSION, and a diffs array)`,
+      );
+    }
+  });
   return parsed as RegressionResult[];
 }

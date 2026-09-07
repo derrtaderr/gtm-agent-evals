@@ -97,7 +97,7 @@ function configRow(c: ConfigView): string {
         : `<span class="badge pending">not cleared (${escapeHtml(String(c.streak))}/${escapeHtml(String(c.gateN))})</span>`;
 
   const history = c.history
-    .map((s) => `<span class="chip ${s === "PASS" ? "pass" : "block"}">${s}</span>`)
+    .map((s) => `<span class="chip ${s === "PASS" ? "pass" : "block"}">${escapeHtml(String(s))}</span>`)
     .join(" ");
 
   // Surface WHY the config is currently blocked. The reason is event-origin

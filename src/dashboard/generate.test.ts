@@ -81,6 +81,23 @@ describe("generateDashboard", () => {
     expect(() => generateDashboard(tel, join(dir, "out.html"), reg)).toThrow(/array/i);
   });
 
+  it("throws a loud, named error on a malformed regression item, not a raw TypeError", () => {
+    const tel = join(dir, "events.jsonl");
+    writeJsonl(tel, [event("cfg-a", "PASS", 1)]);
+    const reg = join(dir, "regression.json");
+    // Item missing `diffs` — would crash later at r.diffs.length with a raw TypeError.
+    writeFileSync(reg, JSON.stringify([{ goldenId: "g-1", status: "REGRESSION" }]), "utf8");
+    expect(() => generateDashboard(tel, join(dir, "out.html"), reg)).toThrow(/item #0/i);
+  });
+
+  it("throws a named error on a regression item with an invalid status", () => {
+    const tel = join(dir, "events.jsonl");
+    writeJsonl(tel, [event("cfg-a", "PASS", 1)]);
+    const reg = join(dir, "regression.json");
+    writeFileSync(reg, JSON.stringify([{ goldenId: "g-1", status: "MAYBE", diffs: [] }]), "utf8");
+    expect(() => generateDashboard(tel, join(dir, "out.html"), reg)).toThrow(/item #0/i);
+  });
+
   it("passes gateN through so cleared status renders", () => {
     const tel = join(dir, "events.jsonl");
     writeJsonl(tel, [event("cfg-a", "PASS", 1), event("cfg-a", "PASS", 2)]);
