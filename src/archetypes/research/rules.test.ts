@@ -48,59 +48,33 @@ describe("sourceStepPresent", () => {
 });
 
 describe("noUncitedAssertion", () => {
-  it("passes when every numeric claim appears in a source step", async () => {
+  const noSource: RunStep[] = [
+    { kind: "tool_result", name: "s", content: "no relevant numbers here" },
+  ];
+
+  // It is a warn-level SIGNAL, never a gate. Deep numeric grounding is the
+  // groundedness RUBRIC's job; this rule only surfaces an obvious unsourced
+  // money claim.
+  it("warns (never blocks) on an unsourced currency-marked money claim", async () => {
     const v = await noUncitedAssertion(
-      run("They raised 12 million.", [
-        { kind: "tool_result", name: "s", content: "Series A of 12 million" },
-      ]),
-    );
-    expect(v).toEqual([]);
-  });
-  it("blocks a numeric claim absent from every source step", async () => {
-    const v = await noUncitedAssertion(
-      run("They raised 50 million.", [
+      run("They raised $50M last quarter.", [
         { kind: "tool_result", name: "s", content: "Series A of 12 million" },
       ]),
     );
     expect(v).toHaveLength(1);
     expect(v[0].rule).toBe("no-uncited-assertion");
-    expect(v[0].severity).toBe("block");
+    expect(v[0].severity).toBe("warn");
   });
-  it("only checks tool_result steps, not the agent's own thoughts", async () => {
-    const v = await noUncitedAssertion(
-      run("They serve 3000 customers.", [
-        { kind: "thought", content: "I believe they serve 3000 customers" },
-      ]),
-    );
-    expect(v).toHaveLength(1);
-  });
-  it("ignores sentences with no numeric claim", async () => {
-    const v = await noUncitedAssertion(
-      run("Acme Freight looks like a strong fit.", [
-        { kind: "tool_result", name: "s", content: "no numbers here" },
-      ]),
-    );
-    expect(v).toEqual([]);
-  });
-  it("blocks a fabricated number even when another number in the sentence is sourced", async () => {
+  it("also warns on an unsourced 'N million dollars' claim", async () => {
     const v = await noUncitedAssertion(
       run("They raised 50 million dollars in 2024.", [
         { kind: "tool_result", name: "s", content: "Series A in 2024. Headcount 40." },
       ]),
     );
     expect(v).toHaveLength(1);
-    expect(v[0].rule).toBe("no-uncited-assertion");
-    expect(v[0].severity).toBe("block");
+    expect(v[0].severity).toBe("warn");
   });
-  it("blocks a fabricated headcount riding on a sourced one", async () => {
-    const v = await noUncitedAssertion(
-      run("They grew to 5000 people from 40 last year.", [
-        { kind: "tool_result", name: "s", content: "Headcount is 40." },
-      ]),
-    );
-    expect(v).toHaveLength(1);
-  });
-  it("passes a sourced $4.2M without tearing the decimal apart", async () => {
+  it("treats a source-magnitude-equal money claim as sourced ($4.2M vs 4.2 million)", async () => {
     const v = await noUncitedAssertion(
       run("They raised $4.2M last year.", [
         { kind: "tool_result", name: "s", content: "Series A of 4.2 million" },
@@ -108,13 +82,56 @@ describe("noUncitedAssertion", () => {
     );
     expect(v).toEqual([]);
   });
-  it("passes a sourced multiplier like 3.5x", async () => {
+  it("treats same-magnitude reformatting as sourced ($4,200,000 vs 4.2 million)", async () => {
     const v = await noUncitedAssertion(
-      run("Revenue grew 3.5x.", [
-        { kind: "tool_result", name: "s", content: "Growth was 3.5x last year" },
+      run("They raised $4,200,000 in a Series A.", [
+        { kind: "tool_result", name: "s", content: "Series A of 4.2 million" },
       ]),
     );
     expect(v).toEqual([]);
+  });
+
+  // The class of legitimate-research numbers that must NOT even warn.
+  it("does not fire on a founding year", async () => {
+    expect(
+      await noUncitedAssertion(run("Founded in 1999, they now lead.", noSource)),
+    ).toEqual([]);
+  });
+  it("does not fire on ordinals or rankings (#2, top 3)", async () => {
+    expect(
+      await noUncitedAssertion(
+        run("They are the #2 player and match our top 3 use cases.", noSource),
+      ),
+    ).toEqual([]);
+  });
+  it("does not fire on 24/7, phone numbers, or street addresses", async () => {
+    expect(
+      await noUncitedAssertion(
+        run(
+          "They run 24/7 support from 1200 Market Street, reachable at 555-0142.",
+          noSource,
+        ),
+      ),
+    ).toEqual([]);
+  });
+  it("does not fire on a bare percentage", async () => {
+    expect(
+      await noUncitedAssertion(
+        run("About 30% of their team is technical.", noSource),
+      ),
+    ).toEqual([]);
+  });
+  it("does not fire on a bare headcount (that is the rubric's job)", async () => {
+    expect(
+      await noUncitedAssertion(
+        run("They grew to 5000 people from 40 last year.", noSource),
+      ),
+    ).toEqual([]);
+  });
+  it("does not fire on a bare multiplier like 3.5x", async () => {
+    expect(
+      await noUncitedAssertion(run("Revenue grew 3.5x.", noSource)),
+    ).toEqual([]);
   });
 });
 
@@ -154,9 +171,20 @@ describe("research fixtures", () => {
   it("passing fixture produces no violations", async () => {
     expect(await allViolations(passing)).toEqual([]);
   });
-  it("failing fixture trips an uncited-assertion block", async () => {
+  it("failing fixture trips the source-step-present block (never retrieved)", async () => {
     const v = await allViolations(failing);
-    expect(v.some((x) => x.rule === "no-uncited-assertion")).toBe(true);
-    expect(v.some((x) => x.severity === "block")).toBe(true);
+    expect(
+      v.some(
+        (x) => x.rule === "source-step-present" && x.severity === "block",
+      ),
+    ).toBe(true);
+  });
+  it("failing fixture warns on its unsourced money claim", async () => {
+    const v = await allViolations(failing);
+    expect(
+      v.some(
+        (x) => x.rule === "no-uncited-assertion" && x.severity === "warn",
+      ),
+    ).toBe(true);
   });
 });
