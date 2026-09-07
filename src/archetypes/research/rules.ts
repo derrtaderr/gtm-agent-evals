@@ -6,20 +6,28 @@
 
 import type { AgentRun, RuleFn, RunStep, Violation } from "../../types.js";
 
+// Matches a whole numeric token including an optional leading "$", thousands
+// separators, and a decimal part: "$4.2M" -> "$4.2", "3,000" -> "3,000",
+// "3.5x" -> "3.5", "12%" -> "12". The trailing unit (M/x/%) is not captured, so
+// magnitude words are compared by their numeric core only.
+const NUMBER_TOKEN = /\$?\d[\d,]*(?:\.\d+)?/g;
+
 /** Normalized numeric cores in a string, e.g. "$4.2M" -> "4.2", "3,000" -> "3000". */
 function extractNumbers(text: string): string[] {
-  const matches = text.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
-  return matches.map((m) => m.replace(/,/g, ""));
+  const matches = text.match(NUMBER_TOKEN) ?? [];
+  return matches.map((m) => m.replace(/[$,]/g, ""));
 }
 
 function toolResultSteps(run: AgentRun): RunStep[] {
   return (run.steps ?? []).filter((s) => s.kind === "tool_result");
 }
 
-/** Splits output into candidate assertion sentences. */
+/** Splits output into candidate assertion sentences WITHOUT breaking decimals:
+ *  a period only ends a sentence when it is not sitting between two digits, so
+ *  "$4.2M" and "3.5x" stay intact. */
 function sentences(text: string): string[] {
   return text
-    .split(/[.!?\n]+/)
+    .split(/(?<!\d)[.!?]+(?!\d)|\n+/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -47,10 +55,15 @@ export const noUncitedAssertion: RuleFn = (run: AgentRun): Violation[] => {
   for (const sentence of sentences(run.output)) {
     const nums = extractNumbers(sentence);
     if (nums.length === 0) continue; // no numeric claim to ground
-    if (nums.some((n) => sourceNumbers.has(n))) continue; // at least one is sourced
+    // EVERY number in the sentence must be sourced. A single fabricated figure
+    // must not ride through on an incidental sourced number in the same sentence.
+    const unsourced = nums.filter((n) => !sourceNumbers.has(n));
+    if (unsourced.length === 0) continue;
     violations.push({
       rule: "no-uncited-assertion",
-      message: `Uncited numeric claim, no source step contains it: "${sentence}".`,
+      message: `Uncited numeric claim(s) ${unsourced
+        .map((n) => `"${n}"`)
+        .join(", ")}, no source step contains them: "${sentence}".`,
       severity: "block",
     });
   }

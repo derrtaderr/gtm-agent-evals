@@ -1,7 +1,7 @@
 {
   "archetype": "research",
   "input": "Research Acme Freight and summarize funding and headcount for ICP fit.",
-  "output": "Acme Freight is a rocket ship.\n\nThey raised 50 million dollars last quarter and now serve 3,000 enterprise customers.\n\nDefinitely worth a top-priority outreach.",
+  "output": "Acme Freight is a rocket ship.\n\nThey raised $50M last quarter and now serve 3,000 enterprise customers.\n\nThey grew to 5000 people from 40 last year, a 12x jump.\n\nDefinitely worth a top-priority outreach.",
   "steps": [
     {
       "kind": "tool_call",

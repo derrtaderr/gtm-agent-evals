@@ -82,6 +82,40 @@ describe("noUncitedAssertion", () => {
     );
     expect(v).toEqual([]);
   });
+  it("blocks a fabricated number even when another number in the sentence is sourced", async () => {
+    const v = await noUncitedAssertion(
+      run("They raised 50 million dollars in 2024.", [
+        { kind: "tool_result", name: "s", content: "Series A in 2024. Headcount 40." },
+      ]),
+    );
+    expect(v).toHaveLength(1);
+    expect(v[0].rule).toBe("no-uncited-assertion");
+    expect(v[0].severity).toBe("block");
+  });
+  it("blocks a fabricated headcount riding on a sourced one", async () => {
+    const v = await noUncitedAssertion(
+      run("They grew to 5000 people from 40 last year.", [
+        { kind: "tool_result", name: "s", content: "Headcount is 40." },
+      ]),
+    );
+    expect(v).toHaveLength(1);
+  });
+  it("passes a sourced $4.2M without tearing the decimal apart", async () => {
+    const v = await noUncitedAssertion(
+      run("They raised $4.2M last year.", [
+        { kind: "tool_result", name: "s", content: "Series A of 4.2 million" },
+      ]),
+    );
+    expect(v).toEqual([]);
+  });
+  it("passes a sourced multiplier like 3.5x", async () => {
+    const v = await noUncitedAssertion(
+      run("Revenue grew 3.5x.", [
+        { kind: "tool_result", name: "s", content: "Growth was 3.5x last year" },
+      ]),
+    );
+    expect(v).toEqual([]);
+  });
 });
 
 describe("research archetype exports", () => {
