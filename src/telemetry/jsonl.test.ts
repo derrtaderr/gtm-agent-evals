@@ -106,4 +106,38 @@ describe("readEvents", () => {
     writeFileSync(path, JSON.stringify({ hello: "world" }) + "\n");
     expect(() => readEvents(path)).toThrowError(/line 1/i);
   });
+
+  it("rejects a verdict.status that is not exactly PASS or BLOCK", () => {
+    const bad = evt();
+    (bad.verdict as { status: string }).status = "MAYBE";
+    writeFileSync(path, JSON.stringify(bad) + "\n");
+    expect(() => readEvents(path)).toThrowError(/line 1/i);
+  });
+
+  it("rejects an empty required string field (empty runId)", () => {
+    writeFileSync(path, JSON.stringify(evt({ runId: "" })) + "\n");
+    expect(() => readEvents(path)).toThrowError(/line 1/i);
+  });
+
+  it("rejects a verdict missing its reasons array", () => {
+    const bad = evt();
+    delete (bad.verdict as { reasons?: unknown }).reasons;
+    writeFileSync(path, JSON.stringify(bad) + "\n");
+    expect(() => readEvents(path)).toThrowError(/line 1/i);
+  });
+
+  it("rejects a verdict whose violations is not an array", () => {
+    const bad = evt();
+    (bad.verdict as { violations: unknown }).violations = "none";
+    writeFileSync(path, JSON.stringify(bad) + "\n");
+    expect(() => readEvents(path)).toThrowError(/line 1/i);
+  });
+
+  it("keeps a valid event that carries unknown extra top-level fields (forward-compat)", () => {
+    const withExtra = { ...evt(), EXTRA: "future-field" };
+    writeFileSync(path, JSON.stringify(withExtra) + "\n");
+    const events = readEvents(path);
+    expect(events).toHaveLength(1);
+    expect(events[0].runId).toBe("run-001");
+  });
 });

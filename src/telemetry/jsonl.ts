@@ -17,21 +17,30 @@ export function makeJsonlSink(path: string): TelemetrySink {
   };
 }
 
-/** The minimal structural check that separates a real TelemetryEvent from any
- *  other well-formed JSON. A line that parses but is not this shape must fail
- *  loudly rather than pass as a clean event. */
+/** Validate that parsed JSON is a real TelemetryEvent — shape AND the values of
+ *  the load-bearing fields. A line that parses but carries a bad value (a
+ *  verdict.status that is not exactly PASS/BLOCK, an empty required string, a
+ *  non-array violations/reasons) must fail loudly rather than pass as a clean
+ *  event, because a corrupted status flows straight into the autonomy streak.
+ *  Unknown extra top-level fields are deliberately allowed (forward-compat). */
 function isTelemetryEvent(value: unknown): value is TelemetryEvent {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  return (
-    typeof v.runId === "string" &&
-    typeof v.timestamp === "string" &&
-    typeof v.configId === "string" &&
-    typeof v.archetype === "string" &&
-    typeof v.verdict === "object" &&
-    v.verdict !== null &&
-    typeof (v.verdict as Record<string, unknown>).status === "string"
-  );
+  const nonEmptyString = (x: unknown): x is string => typeof x === "string" && x.length > 0;
+  if (
+    !nonEmptyString(v.runId) ||
+    !nonEmptyString(v.timestamp) ||
+    !nonEmptyString(v.configId) ||
+    !nonEmptyString(v.archetype)
+  ) {
+    return false;
+  }
+  if (typeof v.verdict !== "object" || v.verdict === null) return false;
+  const verdict = v.verdict as Record<string, unknown>;
+  if (verdict.status !== "PASS" && verdict.status !== "BLOCK") return false;
+  if (!Array.isArray(verdict.violations)) return false;
+  if (!Array.isArray(verdict.reasons)) return false;
+  return true;
 }
 
 /** Read a JSONL telemetry file into events. Missing file → []. Blank and
