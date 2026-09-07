@@ -53,7 +53,7 @@ Config id: `content-default`, `gateN: 5`.
 | rule name | severity | flags |
 | --- | --- | --- |
 | `no-unfilled-placeholder` | block | leftover merge tokens across styles: `{{firstName}}`, `{role}`, `[company]`, `<company>`, `%firstName%` (Outreach/Salesloft), `((company))`, `$role$` — the fabricated-personalization footgun. A real `$4.2M` figure or `30%` is not a token. |
-| `required-cta` | block | no explicit call-to-action. Counts a CTA only as (A) an imperative-initial ask (`Reply…`, `Book a time`, `Grab 15…`) or (B) a question carrying a meeting/response marker. `params.markers: string[]` overrides the question markers, `params.imperatives: string[]` the imperative verbs. |
+| `required-cta` | block | no explicit call-to-action. Counts a CTA only as (A) an imperative ASK — a clause starting with a CTA verb AND carrying a reader-directed ask signal or a conditional `if …` (so `Reply if interested`/`Grab 15 minutes on my calendar` pass, but `Download volumes tripled.`/`Schedule slippage was the theme.` flag), (B) a `?`-bearing sentence carrying a time/meeting/response marker (weekday, `minutes`, `work for you`, `chance`, `right place`, `send`, `overview`, `call`, `chat`), or (C) a caller-supplied `params.markers` substring (trusted). `params.imperatives: string[]` overrides the verb list. |
 | `length-cap` | warn | output over `params.maxWords` (default 150) |
 
 Rubric dimensions: `relevance`, `specificity` (threshold 7).
@@ -64,16 +64,32 @@ Config id: `outbound-default`, `gateN: 5`.
 | rule name | severity | flags |
 | --- | --- | --- |
 | `source-step-present` | block | run made no `tool_result` step (never retrieved) |
-| `no-uncited-assertion` | block | each sentence with a numeric claim whose numbers appear in no `tool_result` step |
+| `no-uncited-assertion` | warn | an obvious unsourced MONEY/magnitude claim (`$50M`, `50 million dollars`) with no matching source amount |
 
 Rubric dimensions: `citation-quality`, `groundedness` (threshold 7).
 Config id: `research-default`, `gateN: 5`.
 
-`no-uncited-assertion` is deterministic and numeric-only by design: it normalizes
-numbers (`$4.2M` → `4.2`, `3,000` → `3000`) from `run.output` sentences and from
-every `tool_result` step's `content`, and blocks a sentence when none of its
-numbers are found in any source. It is a first-pass grounding gate, not a full
-NLI checker — the LLM rubric (`groundedness`) is the second layer.
+### The rule-vs-rubric split (design principle, fix wave 2)
+
+A deterministic RULE `block`s only on an **unambiguous, decidable** violation.
+A check that needs **judgment** belongs in the LLM **rubric**, not a block rule.
+
+- `source-step-present` is a `block`: "the run made zero retrievals" is decidable
+  with certainty, and a research run that never looked anything up cannot be
+  trusted.
+- **Deep numeric grounding is the `groundedness` rubric dimension's job**, not a
+  deterministic rule's. `no-uncited-assertion` is therefore a `warn`-level SIGNAL
+  only — it never gates the run. It fires solely on an *obvious* unsourced money
+  claim: a currency-marked amount (`$4.2M`, `$4,200,000`) or an explicit
+  "`<n> million/billion dollars`" whose magnitude matches no amount in any
+  `tool_result` step. Magnitudes are normalized (`$4.2M` == `$4,200,000` ==
+  source `4.2 million`). It deliberately does **not** fire on founding years,
+  ordinals/rankings (`#2`, `top 3`), `24/7`, phone numbers, street addresses,
+  bare percentages, or bare headcounts — those are grading questions for the
+  rubric, and false-blocking them was the failure this split fixes.
+
+`required-cta` (outbound) stays a `block` by the same test: for cold email,
+"did the writer ask for a next step" is tractable and decidable enough to gate.
 
 ## Params passed through the registry
 
