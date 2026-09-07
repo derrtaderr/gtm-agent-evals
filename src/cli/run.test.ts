@@ -262,3 +262,47 @@ describe("report — telemetry history + autonomy streak", () => {
     expect(code).toBe(2);
   });
 });
+
+describe("run — fail-closed gate safety (fix wave)", () => {
+  it("rejects an unknown flag as a usage error (exit 1), never a silent pass", async () => {
+    const cfg = write("cfg.json", rulesOnlyConfig);
+    const runP = write("run.json", passingRun);
+    const code = await run(
+      ["eval", "--rules-only", "--config", cfg, "--run", runP, "--bogus", "x"],
+      io,
+    );
+    expect(code).toBe(1);
+  });
+
+  it("refuses a rubric-only config under --rules-only (checks nothing) with exit 2, not PASS", async () => {
+    const cfg = write("cfg.json", {
+      archetype: "outbound",
+      gateN: 3,
+      rules: [],
+      rubric: { dimensions: [{ name: "relevance", threshold: 7 }] },
+    });
+    const runP = write("run.json", failingRun);
+    const code = await run(["eval", "--rules-only", "--config", cfg, "--run", runP], io);
+    expect(code).toBe(2);
+  });
+
+  it("refuses a config with no rules and no rubric — it checks nothing (exit 2)", async () => {
+    const cfg = write("cfg.json", { archetype: "outbound", gateN: 3, rules: [] });
+    const runP = write("run.json", failingRun);
+    const code = await run(["eval", "--config", cfg, "--run", runP], io);
+    expect(code).toBe(2);
+  });
+
+  it("warns when --rules-only skips a rubric but still runs its rules", async () => {
+    const cfg = write("cfg.json", {
+      archetype: "outbound",
+      gateN: 3,
+      rules: [{ name: "required-cta" }],
+      rubric: { dimensions: [{ name: "relevance", threshold: 7 }] },
+    });
+    const runP = write("run.json", passingRun);
+    const code = await run(["eval", "--rules-only", "--config", cfg, "--run", runP], io);
+    expect(code).toBe(0);
+    expect(err.some((l) => /rules-only|rubric/i.test(l))).toBe(true);
+  });
+});

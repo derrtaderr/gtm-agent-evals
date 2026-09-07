@@ -30,7 +30,7 @@ import type {
   TelemetryEvent,
   Verdict,
 } from "../types.js";
-import { EXIT, UsageError, exitCodeFor } from "./exit.js";
+import { EXIT, UsageError, InputError, exitCodeFor } from "./exit.js";
 import { parseArgs } from "./args.js";
 import {
   readJsonFile,
@@ -68,6 +68,29 @@ function requireOption(
   return v;
 }
 
+/** The flags each command accepts. An unrecognized flag is a usage error, not a
+ *  silently-ignored token — in a CI gate a typo'd flag must fail, never pass. */
+const ALLOWED_OPTIONS: Record<string, readonly string[]> = {
+  eval: ["config", "run", "rules-only", "telemetry"],
+  record: ["config", "run", "store", "rules-only", "telemetry"],
+  regress: ["store", "runs"],
+  report: ["telemetry"],
+};
+
+function rejectUnknownOptions(
+  options: Record<string, string | boolean>,
+  command: string,
+): void {
+  const allowed = ALLOWED_OPTIONS[command] ?? [];
+  for (const key of Object.keys(options)) {
+    if (!allowed.includes(key)) {
+      throw new UsageError(
+        `${command}: unknown option --${key} (allowed: ${allowed.map((a) => `--${a}`).join(", ")})`,
+      );
+    }
+  }
+}
+
 /** Load + validate config and run, apply --rules-only, and evaluate. Shared by
  *  the eval and record commands. */
 async function evaluateFrom(
@@ -85,8 +108,14 @@ async function evaluateFrom(
   const run = validateRun(readJsonFile(runPath));
 
   const rulesOnly = options["rules-only"] === true;
+  const hadRubric = !!(config.rubric && config.rubric.dimensions.length > 0);
   let provider: LLMProvider;
   if (rulesOnly) {
+    if (hadRubric) {
+      io.err(
+        `warning: --rules-only skips the rubric (${config.rubric!.dimensions.length} dimension(s) not scored).`,
+      );
+    }
     config = { ...config, rubric: undefined };
     provider = unusedProvider;
   } else {
@@ -94,6 +123,20 @@ async function evaluateFrom(
     // catches it, and the gate fails closed to BLOCK. The key is read here and
     // never printed or logged.
     provider = makeClaudeProvider(io.env.ANTHROPIC_API_KEY ?? "");
+  }
+
+  // Fail closed on a config that would check NOTHING. A gate that ran zero
+  // checks must never report PASS — that is a false pass, the exact thing this
+  // tool exists to prevent. (--rules-only over a rubric-only config, or a config
+  // with no rules and no rubric, both land here.)
+  const willRunRules = config.rules.length > 0;
+  const willRunRubric = !rulesOnly && hadRubric;
+  if (!willRunRules && !willRunRubric) {
+    throw new InputError(
+      `${command}: this config defines no checks that will run ` +
+        `(${rulesOnly && hadRubric ? "--rules-only stripped its only check, the rubric" : "no rules and no rubric"}); ` +
+        `nothing would be checked — refusing rather than reporting a false PASS.`,
+    );
   }
 
   const verdict = await evaluate(run, config, { registry, provider });
@@ -212,12 +255,16 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
   try {
     switch (command) {
       case "eval":
+        rejectUnknownOptions(options, "eval");
         return await cmdEval(options, io);
       case "record":
+        rejectUnknownOptions(options, "record");
         return await cmdRecord(options, io);
       case "regress":
+        rejectUnknownOptions(options, "regress");
         return cmdRegress(options, io);
       case "report":
+        rejectUnknownOptions(options, "report");
         return cmdReport(options, io);
       case "help":
       case "--help":

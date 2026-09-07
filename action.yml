@@ -54,15 +54,25 @@ runs:
         npm ci
         npm run build
 
+    # Untrusted inputs are passed through `env:` and referenced as "$VAR" in the
+    # script, never interpolated as ${{ inputs.* }} directly into the shell body.
+    # Direct interpolation is the classic GitHub Actions script-injection vector:
+    # a crafted input value would break out of the command. `env:` values arrive
+    # as ordinary environment strings and cannot inject shell.
     - name: Eval gate
       shell: bash
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        CONFIG: ${{ inputs.config }}
+        RUN_PATH: ${{ inputs.run }}
+        RULES_ONLY: ${{ inputs.rules-only }}
+        TELEMETRY: ${{ inputs.telemetry }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
-        CLI="node ${{ github.action_path }}/dist/cli/index.js"
-        ARGS=(eval --config "${{ inputs.config }}" --run "${{ inputs.run }}")
-        if [ "${{ inputs.rules-only }}" = "true" ]; then ARGS+=(--rules-only); fi
-        if [ -n "${{ inputs.telemetry }}" ]; then ARGS+=(--telemetry "${{ inputs.telemetry }}"); fi
+        CLI="node $ACTION_PATH/dist/cli/index.js"
+        ARGS=(eval --config "$CONFIG" --run "$RUN_PATH")
+        if [ "$RULES_ONLY" = "true" ]; then ARGS+=(--rules-only); fi
+        if [ -n "$TELEMETRY" ]; then ARGS+=(--telemetry "$TELEMETRY"); fi
         echo "Running: $CLI ${ARGS[*]}"
         $CLI "${ARGS[@]}"
 
@@ -70,7 +80,11 @@ runs:
       # Only runs when both a golden store and fresh runs are provided.
       if: ${{ inputs.store != '' && inputs.runs != '' }}
       shell: bash
+      env:
+        STORE: ${{ inputs.store }}
+        RUNS: ${{ inputs.runs }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
-        CLI="node ${{ github.action_path }}/dist/cli/index.js"
-        echo "Running: $CLI regress --store ${{ inputs.store }} --runs ${{ inputs.runs }}"
-        $CLI regress --store "${{ inputs.store }}" --runs "${{ inputs.runs }}"
+        CLI="node $ACTION_PATH/dist/cli/index.js"
+        echo "Running: $CLI regress --store $STORE --runs $RUNS"
+        $CLI regress --store "$STORE" --runs "$RUNS"
