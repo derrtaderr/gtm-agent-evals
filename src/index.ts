@@ -2,3 +2,6 @@
 // a consumer imports one package. Kept minimal in the spec commit; lanes extend
 // it (engine exports evaluate/registry, regression exports record/replay, etc.).
 export * from "./types.js";
+
+// Lane B — golden-trajectory regression.
+export * from "./regression/index.js";
