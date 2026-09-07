@@ -58,6 +58,14 @@ verdictHistory(events: TelemetryEvent[], configId: string): VerdictStatus[]   //
 autonomyStreak(events: TelemetryEvent[], configId: string): number            // consecutive-PASS tail
 ```
 
+`verdictHistory` and `autonomyStreak` order by **parsed time** (`Date.parse` on
+each `timestamp`), not by lexical string comparison, so equal instants written
+with different UTC offsets (`+05:00` vs `Z`) or fractional precision (`…00Z` vs
+`…00.500Z`) sort correctly. An **unparseable** timestamp throws, naming the
+offending value, rather than sorting to `NaN` and landing arbitrarily. Two events
+sharing the exact same parsed instant keep their input (append) order.
+`eventsByConfig` does not sort — it preserves input order.
+
 ## JSONL line format
 
 One `TelemetryEvent` serialized with `JSON.stringify`, one per line, `\n`
@@ -70,11 +78,22 @@ from `types.ts`:
 
 - `durationMs` is optional (omitted when absent).
 - Blank / whitespace-only lines are skipped by `readEvents`.
-- **A malformed line (invalid JSON) or a well-formed line that is not a
-  `TelemetryEvent` shape throws a loud error naming the 1-based line number.** A
-  corrupt line is never treated as a clean event. The shape check requires
-  string `runId`, `timestamp`, `configId`, `archetype`, and a `verdict` object
-  with a string `status`.
+- **A malformed line (invalid JSON) or a well-formed line that is not a valid
+  `TelemetryEvent` throws a loud error naming the 1-based line number.** A corrupt
+  line is never treated as a clean event. `readEvents` validates both shape and
+  the values of the load-bearing fields:
+  - `runId`, `timestamp`, `configId`, `archetype` must each be a **non-empty**
+    string.
+  - `verdict.status` must be **exactly** `"PASS"` or `"BLOCK"` (a status like
+    `"MAYBE"` is rejected, not kept — it would otherwise corrupt the autonomy
+    streak downstream).
+  - `verdict.violations` and `verdict.reasons` must each be an array.
+- **Unknown extra top-level fields are deliberately allowed** (a line with fields
+  beyond the `TelemetryEvent` contract is kept, not rejected). This is a conscious
+  forward-compatibility decision: a newer producer can add fields without a reader
+  built against this version refusing its logs. Validation is a floor on the known
+  fields, not a closed schema. Covered by the `jsonl.test.ts` test "keeps a valid
+  event that carries unknown extra top-level fields (forward-compat)".
 
 ## Braintrust adapter mapping
 
