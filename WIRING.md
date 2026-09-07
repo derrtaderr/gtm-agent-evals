@@ -98,4 +98,4 @@ least one `block` rule. All names are invented (see below). Lane B (regression)
 and Lane A (gate) can reuse these as ready-made trajectories.
 
 Invented (synthetic) names used, no real client or person:
-`Northwind Robotics`, `Acme Freight`, `Dana`, `Jason` (as generic sender).
+`Northwind Robotics`, `Acme Freight`, `Dana`, `Ray Okafor` (invented sender).
