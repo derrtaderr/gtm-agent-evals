@@ -4,11 +4,17 @@
   "description": "Eval + regression platform for GTM agents: deterministic rules, an LLM rubric that fails closed, an N-clean-runs autonomy gate, golden-trajectory regression, telemetry, and a CI gate.",
   "type": "module",
   "license": "MIT",
+  "main": "dist/index.js",
   "bin": {
     "gtm-agent-evals": "dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
