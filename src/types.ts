@@ -167,3 +167,26 @@ export type TelemetrySink = (event: TelemetryEvent) => Promise<void> | void;
  *  queue) < auto (unattended, takes effect). `auto` removes the standing
  *  review, never the gate — every run is still evaluated. */
 export type AutonomyTier = "supervised" | "advisory" | "auto";
+
+/** The subject that outlives a run. Nothing in the platform had one: rules,
+ *  rubrics, verdicts and telemetry are all per-run, keyed by `configId`.
+ *  `configIds` is the join — the eval configs whose telemetry counts as this
+ *  agent's evidence — which associates every existing artifact to an agent
+ *  without changing any of them. */
+export type AgentRecord = {
+  id: string;
+  name: string;
+  description?: string;
+  /** Hash of whatever defines this agent's behavior (prompt, config, tools).
+   *  The platform does not compute it; the operator supplies it, because only
+   *  the operator knows what "the agent's configuration" means in their stack. */
+  configHash: string;
+  modelId: string;
+  /** Clean runs required before this agent is eligible for the next tier. */
+  gateN: number;
+  /** Eval config ids whose telemetry is this agent's evidence. Empty means no
+   *  evidence stream is associated, which makes every evidence falsifier
+   *  UNEVALUABLE rather than silently satisfied. */
+  configIds: string[];
+  registeredAt: string;
+};
