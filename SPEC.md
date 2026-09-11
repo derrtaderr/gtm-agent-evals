@@ -114,7 +114,195 @@ cautionary precedent; the ship-check gate verifies this.
   archetypes; a hosted/live dashboard (the shipped one is static-over-JSONL); real
   Braintrust account wiring beyond the adapter interface.
 
+---
+
+# Lane G — the autonomy ledger (added 2026-09-11)
+
+The platform measures runs. It does not remember decisions. `report` will tell you
+an agent has a streak of nine clean runs; nothing anywhere records that a person
+looked at that streak and decided this agent may now run unattended, on what
+evidence, and under what conditions that decision stops being true.
+
+**The ledger is the layer that ANSWERS "has this agent earned autonomy," not a
+fifth gate.** The gate decides one run. The ledger decides one agent, holds the
+evidence beside the decision, and expires the decision when the evidence stops
+holding. Autonomy that expires unless re-earned is the move; a permanent green
+checkmark is the failure mode it exists to prevent.
+
+## Prior art this lane stands on (do not rebuild)
+
+- **The N-clean-runs gate already in this repo** (`src/runlog/`, `src/telemetry/query.ts`)
+  is the promotion *mechanic*. The ledger consumes it; it does not reimplement it.
+  A streak makes an agent **eligible**. Only a person grants.
+- **`earn-autonomy`** (public) is the same streak pattern in another setting, and
+  is where "config-hash change resets the streak" comes from. The ledger
+  generalizes that single rule into a falsifier registry.
+- **A tier classifier running in production at a paying client** (private, not
+  extracted, not copied) contributes one pattern, cited here and reimplemented
+  from scratch: **deterministic rules override any LLM proposal, and the stricter
+  tier always wins.** No code, config, or vocabulary from it enters this repo.
+  The ledger's v1 has no LLM in the tier path at all, which is the strictest
+  reading of that pattern.
+- **A falsifier-registry drift detector** (private, not extracted, not copied)
+  contributes the validity model, cited here and reimplemented in TypeScript:
+  a durable claim carries the facts that must stay true, each falsifier is DATA
+  (id, statement, check id, thresholds) rather than a hardcoded branch, verdicts
+  are `VALID` / `SUSPECT` / broken, worst-wins across falsifiers, and a check
+  that cannot run produces `SUSPECT` — never a pass. Its `statement` + `evidence`
+  pairing is the reporting contract: a reader disagrees with a verdict by reading
+  two lines, not by re-deriving the check.
+
+## Agent identity
+
+Nothing in the platform had a subject that outlives a run. `AgentRecord` is it:
+a stable `id`, a human `name`, the `configHash` and `modelId` that define what the
+agent currently *is*, a `gateN`, and `configIds` — the eval-config ids whose
+telemetry counts as this agent's evidence. That last field is the join: every
+existing artifact (telemetry event, verdict, streak) is keyed by `configId`, so
+one additive mapping associates the whole existing record to an agent without
+touching any of it.
+
+## Autonomy tiers — the vocabulary, defined
+
+Three tiers, strictly ordered. A tier describes **where the human sits**, not how
+good the agent is.
+
+| Tier | The human's position | Earned how |
+|---|---|---|
+| `supervised` | Every run is reviewed by a person before it has any effect. | The floor. Never granted, never revoked — it is what an agent has when no grant holds. |
+| `advisory` | The agent runs unattended; its output lands in a human queue as a recommendation. Effects on the world still need a human action. | A clean streak meeting `gateN`, then an explicit human grant. |
+| `auto` | The agent runs unattended and its output takes effect with no human in the path. | A clean streak meeting `gateN` at the time of grant, then an explicit human grant. |
+
+Ordering: `supervised` (0) < `advisory` (1) < `auto` (2).
+
+Two rules that keep this honest:
+
+1. **`auto` removes the standing review, never the gate.** Every run is still
+   evaluated, still BLOCKs, still lands in telemetry. A BLOCK under `auto` is
+   what breaks the grant's `no_block_since_grant` falsifier.
+2. **The tier is per agent in v1.** Per-task-class tiers are a real extension
+   (`AgentRun.archetype` is the natural key) and are deliberately deferred —
+   forcing it now would mean guessing the task-class vocabulary before any
+   operator has used the per-agent one.
+
+## The grant, with falsifiers — the novel core
+
+An `AutonomyGrant` is a durable record: which agent, which tier, when, granted by
+whom, the **evidence basis** at grant time (config hash, model id, the streak, the
+`gateN` it cleared, the telemetry `runId`s that made up the streak), and the ids
+of the **falsifiers** that must keep holding.
+
+**Granting is never automatic.** The streak makes an agent eligible; `grant`
+requires a typed confirmation phrase that must match exactly, and refuses a tier
+the agent is not eligible for, naming the shortfall. A gate that promotes itself
+is not a decision, it is a counter.
+
+### The falsifier registry is data
+
+```jsonc
+{
+  "falsifiers": [
+    {
+      "id": "config_hash_unchanged",
+      "check": "config_hash",
+      "statement": "The agent's configuration is the one the grant was earned on."
+    },
+    {
+      "id": "evidence_not_stale",
+      "check": "evidence_freshness",
+      "statement": "A clean run has been recorded recently enough for the grant's evidence to still describe this agent.",
+      "params": { "suspectAfterDays": 14 }
+    }
+  ]
+}
+```
+
+`check` names a function in a `CHECKS` table in code. **A registry naming a check
+id that does not exist is a load-time refusal, not a skipped check** — a skipped
+check reads as VALID downstream, which is the exact false-pass this platform
+exists to prevent. Retuning a threshold is a data edit; a genuinely new *kind* of
+falsifier is a check function plus a registry entry.
+
+The four shipped falsifiers:
+
+| id | Must still be true | Breaks when |
+|---|---|---|
+| `config_hash_unchanged` | The agent's config hash equals the one in the grant's evidence. | It differs → BROKEN. Agent not in the registry → UNEVALUABLE. |
+| `model_unchanged` | The agent's model id equals the one in the grant's evidence. | It differs → BROKEN. Agent not in the registry → UNEVALUABLE. |
+| `no_block_since_grant` | No BLOCK verdict has been recorded for this agent since `grantedAt`. | Any BLOCK at or after `grantedAt` → BROKEN. No telemetry source → UNEVALUABLE. |
+| `evidence_not_stale` | A clean run is recent enough that the grant's evidence still describes this agent. | No PASS within `suspectAfterDays` → DEGRADED. No telemetry source → UNEVALUABLE. |
+
+### The re-check, and how a grant dies
+
+`check` re-evaluates every grant's falsifiers against the current agent registry
+and telemetry. Per-falsifier status is `HOLDS` / `DEGRADED` / `BROKEN` /
+`UNEVALUABLE`; the grant's status is **worst-wins**:
+
+- any `BROKEN` → **REVOKED**
+- else any `DEGRADED` or `UNEVALUABLE` → **SUSPECT**
+- else → **VALID**
+
+**Fail closed, restated for this lane: a falsifier that cannot be evaluated makes
+the grant SUSPECT, never VALID, and no path exists from UNEVALUABLE to VALID.**
+A check that throws is caught and reported as UNEVALUABLE carrying the exception
+text — never dropped.
+
+Every non-VALID verdict prints the broken falsifier's `statement` and the
+`evidence` line that moved it, both named.
+
+**Effective tier** = the highest tier among that agent's grants whose current
+status is VALID, falling back to the next-lower grant that still holds, and to
+the `supervised` floor when none does. Revocation is therefore a *demotion*, not
+an erasure: the grant record stays in the ledger with its verdict, because "this
+agent used to be cleared for auto and lost it on 9/14" is the most useful line in
+the file.
+
+## Commands (fitting the existing CLI, `src/cli/`)
+
+```
+register --agents <agents.jsonl> --id <id> --name <n> --model <m> --config-hash <h>
+         [--eval-configs a,b] [--gate-n <N>] [--description <d>]
+grant    --agents <a> --grants <g> --telemetry <e> --agent <id> --tier <t>
+         --confirm "grant <tier> to <agent-id>" [--granted-by <who>] [--falsifiers <r.json>]
+check    --agents <a> --grants <g> [--telemetry <e>] [--falsifiers <r.json>]
+         [--as-of <iso>] [--out <ledger.json>]
+status   --agents <a> --grants <g> [--telemetry <e>] [--agent <id>] [--as-of <iso>] [--out <l.json>]
+```
+
+Exit codes extend additively (existing codes are not renumbered): **5 =
+AUTONOMY**, at least one grant is not VALID. `check` is the CI-schedulable
+command; `status` is the human surface and always exits 0 unless its input is
+bad. `--as-of` exists so every run is reproducible and every test is
+deterministic.
+
+`--out` writes the ledger as JSON matching the repo's telemetry file conventions,
+so the existing dashboard *could* read it. **Wiring it into the dashboard is
+session 2**, deliberately, so the ledger's shape is settled by the terminal
+surface first.
+
+## types.ts additions (additive only)
+
+`AgentId`, `AgentRecord`, `AutonomyTier`, `AutonomyGrant`, `GrantEvidence`,
+`FalsifierSpec`, `FalsifierRegistry`, `FalsifierStatus`, `FalsifierResult`,
+`GrantStatus`, `GrantCheck`, `AgentLedgerEntry`. **No existing type is changed or
+removed**, which is what keeps all 293 prior tests green.
+
+## Session-2 non-goals (named so they are not improvised into session 1)
+
+- Dashboard view of the ledger (session 1 writes the JSON; session 2 renders it).
+- ship-check integration — independent adversarial review as a fifth falsifier
+  (`review_not_stale`), which needs the review artifact to have a shape here.
+- Naming consolidation with `earn-autonomy`; that is a positioning decision.
+- redaction-gate egress wiring as a tier precondition.
+- Per-task-class tiers.
+- A scheduled re-check ledger with carried-forward verdicts and recheck intervals.
+- A manual `revoke` command. v1 revokes by evidence only — the falsifier breaks
+  and `check` demotes. A human who wants a grant gone edits the grant store.
+
 ## Iteration log
 
 - 2026-09-06 — spec locked, `types.ts` committed, scope = full platform ("go
   bigger"). Lanes A/B/C/D are Phase 1; E/F Phase 2.
+- 2026-09-11 — Lane G specced: agent identity, the three-tier vocabulary, and
+  falsifier-backed autonomy grants. First additive change to `types.ts` since the
+  six-lane build; baseline before the lane is 293 tests green on `a56edc2`.
