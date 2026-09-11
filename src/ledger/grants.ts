@@ -13,6 +13,7 @@ import { agentEvents, agentStreak } from "./evidence.js";
 import { DEFAULT_FALSIFIER_REGISTRY } from "./falsifiers.js";
 import { isTier, SUPERVISED } from "./tiers.js";
 import { clearedForAutonomy } from "../runlog/index.js";
+import { GrantRefused, InsufficientEvidence } from "./errors.js";
 import type {
   AgentRecord,
   AutonomyGrant,
@@ -68,18 +69,18 @@ export function createGrant(
   const { agent, tier, events, confirm, grantedBy } = input;
 
   if (tier === SUPERVISED) {
-    throw new Error(
+    throw new GrantRefused(
       `"${SUPERVISED}" is the floor every agent already has, not a tier to grant. ` +
         `Grant "advisory" or "auto".`,
     );
   }
   if (typeof grantedBy !== "string" || grantedBy.length === 0) {
-    throw new Error("grant: --granted-by is required; a grant with no human on it is not a grant.");
+    throw new GrantRefused("grant: --granted-by is required; a grant with no human on it is not a grant.");
   }
 
   const required = confirmationPhrase(agent.id, tier);
   if (confirm !== required) {
-    throw new Error(
+    throw new GrantRefused(
       `grant: confirmation does not match. Re-run with --confirm "${required}" ` +
         `(typed exactly) to promote ${agent.id} to ${tier}.`,
     );
@@ -91,7 +92,7 @@ export function createGrant(
       agent.configIds.length === 0
         ? ` The agent has no eval configs associated, so no run can be attributed to it.`
         : "";
-    throw new Error(
+    throw new InsufficientEvidence(
       `grant: ${agent.id} has a clean-run streak of ${streak}, short of its gateN of ` +
         `${agent.gateN}.${why} The streak is what makes an agent eligible; it is not granted around.`,
     );
