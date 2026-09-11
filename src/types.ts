@@ -190,3 +190,92 @@ export type AgentRecord = {
   configIds: string[];
   registeredAt: string;
 };
+
+/** What the grant was earned ON, frozen at grant time. The falsifiers compare
+ *  today's agent against this snapshot, so it is the grant's evidence AND the
+ *  baseline the drift is measured from. */
+export type GrantEvidence = {
+  configHash: string;
+  modelId: string;
+  /** The clean-run streak at the moment of the grant. */
+  streak: number;
+  /** The bar that streak cleared. */
+  gateN: number;
+  /** Telemetry runIds that made up the streak — the receipts, so a reader can
+   *  go look at the runs rather than trust the number. */
+  runIds: string[];
+  /** Free-text from the granting human (a review link, a rationale). */
+  note?: string;
+};
+
+/** A durable, revocable decision: this agent may operate at this tier, on this
+ *  evidence, for as long as these falsifiers hold. */
+export type AutonomyGrant = {
+  id: string;
+  agentId: string;
+  tier: AutonomyTier;
+  grantedAt: string;
+  /** Who typed the confirmation. A grant with no human on it is not a grant. */
+  grantedBy: string;
+  evidence: GrantEvidence;
+  /** Falsifier ids from the registry that must keep holding. */
+  falsifiers: string[];
+};
+
+/** One named fact that must stay true, as DATA. `check` names a function in the
+ *  ledger's CHECKS table; `params` carries that check's thresholds. Retuning a
+ *  threshold is a data edit, never a code change. */
+export type FalsifierSpec = {
+  id: string;
+  check: string;
+  /** Written so a reader can disagree with a verdict by reading two lines. */
+  statement: string;
+  params?: Record<string, unknown>;
+};
+
+export type FalsifierRegistry = { falsifiers: FalsifierSpec[] };
+
+/** HOLDS: still true. DEGRADED: weakening, worth a look. BROKEN: refuted by
+ *  evidence. UNEVALUABLE: the check could not run, which is NOT a pass. */
+export type FalsifierStatus = "HOLDS" | "DEGRADED" | "BROKEN" | "UNEVALUABLE";
+
+export type FalsifierResult = {
+  falsifier: string;
+  statement: string;
+  status: FalsifierStatus;
+  /** The one line that moved it. Printed under the statement on every non-HOLDS
+   *  verdict, so disagreeing costs two lines of reading. */
+  evidence: string;
+};
+
+/** VALID: every falsifier holds. SUSPECT: one is degraded or could not be
+ *  checked. REVOKED: one was refuted. There is no path from UNEVALUABLE to
+ *  VALID. */
+export type GrantStatus = "VALID" | "SUSPECT" | "REVOKED";
+
+export type GrantCheck = {
+  grantId: string;
+  agentId: string;
+  tier: AutonomyTier;
+  status: GrantStatus;
+  falsifiers: FalsifierResult[];
+  checkedAt: string;
+};
+
+/** One agent's row in the ledger: what it may do unattended right now, and the
+ *  whole chain behind that answer. */
+export type AgentLedgerEntry = {
+  agentId: string;
+  name: string;
+  /** Highest tier whose grant is currently VALID; `supervised` when none is. */
+  effectiveTier: AutonomyTier;
+  /** Tiers the agent holds grants for, whatever their current status. */
+  grantedTiers: AutonomyTier[];
+  checks: GrantCheck[];
+  streak: number;
+  gateN: number;
+  /** True once the streak meets gateN — eligible for a grant, never granted. */
+  eligible: boolean;
+  lastVerdict?: VerdictStatus;
+  lastRunAt?: string;
+};
