@@ -39,6 +39,7 @@ import {
   validateFreshPairs,
 } from "./load.js";
 import { printVerdict, printRegression } from "./print.js";
+import { LEDGER_OPTIONS, cmdRegister, cmdGrant, cmdCheck, cmdStatus } from "./ledger.js";
 import { defaultIo, type CliIo } from "./io.js";
 
 export type { CliIo } from "./io.js";
@@ -75,6 +76,7 @@ const ALLOWED_OPTIONS: Record<string, readonly string[]> = {
   record: ["config", "run", "store", "rules-only", "telemetry"],
   regress: ["store", "runs"],
   report: ["telemetry"],
+  ...LEDGER_OPTIONS,
 };
 
 function rejectUnknownOptions(
@@ -239,16 +241,30 @@ function cmdReport(
   return EXIT.PASS;
 }
 
-const USAGE = `gtm-agent-evals — eval + regression gate for GTM agents
+const USAGE = `gtm-agent-evals — eval + regression gate for GTM agents, and the autonomy ledger over them
 
-Commands:
+Evaluate one run:
   eval    --config <cfg.json> --run <run.json> [--rules-only] [--telemetry <events.jsonl>]
   record  --config <cfg.json> --run <run.json> --store <goldens.jsonl> [--rules-only] [--telemetry <p>]
   regress --store <goldens.jsonl> --runs <fresh-runs.json>
   report  --telemetry <events.jsonl>
 
-Exit codes: 0 PASS, 1 usage, 2 unreadable/malformed input, 3 BLOCK, 4 REGRESSION.
-Full eval needs ANTHROPIC_API_KEY for the rubric; --rules-only runs deterministic rules keylessly.`;
+Decide what an agent may do unattended (the ledger):
+  register --agents <agents.jsonl> --id <id> --name <n> --model <m> --config-hash <h>
+           [--eval-configs a,b] [--gate-n <N>] [--description <d>]
+  grant    --agents <a> --grants <g> --telemetry <e> --agent <id> --tier <advisory|auto>
+           --confirm "grant <tier> to <id>" --granted-by <who> [--note <n>] [--falsifiers <r.json>]
+  check    --agents <a> --grants <g> [--telemetry <e>] [--falsifiers <r.json>] [--as-of <iso>] [--out <l.json>]
+  status   --agents <a> --grants <g> [--telemetry <e>] [--agent <id>] [--as-of <iso>] [--out <l.json>]
+
+A clean-run streak makes an agent ELIGIBLE. Only \`grant\` promotes, and only with
+the confirmation phrase typed exactly. \`check\` re-tests the facts each grant
+depends on and demotes the agent when one breaks.
+
+Exit codes: 0 PASS, 1 usage, 2 unreadable/malformed input, 3 BLOCK, 4 REGRESSION,
+5 AUTONOMY (a grant is not VALID, or was refused for lack of evidence).
+Full eval needs ANTHROPIC_API_KEY for the rubric; --rules-only runs deterministic rules keylessly.
+Every ledger command is keyless.`;
 
 export async function run(argv: string[], io: CliIo = defaultIo): Promise<number> {
   const { command, options } = parseArgs(argv);
@@ -266,6 +282,18 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
       case "report":
         rejectUnknownOptions(options, "report");
         return cmdReport(options, io);
+      case "register":
+        rejectUnknownOptions(options, "register");
+        return cmdRegister(options, io);
+      case "grant":
+        rejectUnknownOptions(options, "grant");
+        return cmdGrant(options, io);
+      case "check":
+        rejectUnknownOptions(options, "check");
+        return cmdCheck(options, io);
+      case "status":
+        rejectUnknownOptions(options, "status");
+        return cmdStatus(options, io);
       case "help":
       case "--help":
       case "-h":
