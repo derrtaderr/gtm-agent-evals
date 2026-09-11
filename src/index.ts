@@ -26,3 +26,8 @@ export * from "./telemetry/index.js";
 
 // Lane F — self-contained static dashboard over the telemetry store
 export * from "./dashboard/index.js";
+
+// Lane G — the autonomy ledger: agent identity, tiers, and falsifier-backed
+// grants. The layer that answers "has this agent earned autonomy" as a durable,
+// revocable decision rather than a per-run verdict.
+export * from "./ledger/index.js";
