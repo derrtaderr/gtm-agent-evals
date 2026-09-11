@@ -155,3 +155,15 @@ export type TelemetryEvent = {
 };
 
 export type TelemetrySink = (event: TelemetryEvent) => Promise<void> | void;
+
+// ---------------------------------------------------------------------------
+// The autonomy ledger (Lane G). Everything below is ADDITIVE: no type above
+// changes, which is what keeps every prior lane's tests green. See SPEC.md
+// "Lane G" for the vocabulary these encode.
+// ---------------------------------------------------------------------------
+
+/** Where the human sits, not how good the agent is. Strictly ordered:
+ *  supervised (floor, every run reviewed) < advisory (unattended into a human
+ *  queue) < auto (unattended, takes effect). `auto` removes the standing
+ *  review, never the gate — every run is still evaluated. */
+export type AutonomyTier = "supervised" | "advisory" | "auto";
