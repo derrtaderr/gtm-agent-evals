@@ -13,7 +13,7 @@ export function eventsByConfig(events: TelemetryEvent[], configId: string): Tele
 
 /** Chronological (oldest -> newest) list of PASS/BLOCK verdicts for one config. */
 export function verdictHistory(events: TelemetryEvent[], configId: string): VerdictStatus[] {
-  return chronological(eventsByConfig(events, configId)).map((e) => e.verdict.status);
+  return chronologicalEvents(eventsByConfig(events, configId)).map((e) => e.verdict.status);
 }
 
 /** The current consecutive-PASS streak for one config, counted back from the
@@ -21,7 +21,7 @@ export function verdictHistory(events: TelemetryEvent[], configId: string): Verd
  *  resets the count. This is what the autonomy gate reads to decide whether an
  *  agent has earned unattended operation. */
 export function autonomyStreak(events: TelemetryEvent[], configId: string): number {
-  const history = chronological(eventsByConfig(events, configId));
+  const history = chronologicalEvents(eventsByConfig(events, configId));
   let streak = 0;
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].verdict.status === "PASS") streak++;
@@ -30,14 +30,19 @@ export function autonomyStreak(events: TelemetryEvent[], configId: string): numb
   return streak;
 }
 
-/** Sort ascending by ACTUAL time (parsed), not by lexical string comparison — a
+/** Exported so the autonomy ledger can order an agent's events across SEVERAL
+ *  configs without duplicating the strict timestamp handling below — a second
+ *  copy of this parser is exactly how two surfaces come to disagree about an
+ *  agent's streak.
+ *
+ *  Sort ascending by ACTUAL time (parsed), not by lexical string comparison — a
  *  string sort mis-orders equal instants written with different UTC offsets or
  *  fractional precision, which would corrupt the autonomy streak. Copies first so
  *  the caller's array is not mutated. Events sharing the same parsed instant keep
  *  their input (append) order via the stable sort, so an exact tie is
  *  file-order dependent. An unparseable timestamp throws, naming it, rather than
  *  sorting to NaN and silently landing anywhere. */
-function chronological(events: TelemetryEvent[]): TelemetryEvent[] {
+export function chronologicalEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   return [...events]
     .map((e) => {
       const t = parseInstant(e.timestamp, e);
