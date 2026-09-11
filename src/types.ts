@@ -279,3 +279,14 @@ export type AgentLedgerEntry = {
   lastVerdict?: VerdictStatus;
   lastRunAt?: string;
 };
+
+/** The whole ledger as one artifact: what every registered agent may do
+ *  unattended right now, plus the grants that name an agent nobody registered.
+ *  This is what `--out` writes, and what the dashboard reads. */
+export type Ledger = {
+  generatedAt: string;
+  agents: AgentLedgerEntry[];
+  /** Checks for grants whose agentId is not in the registry. Surfaced rather
+   *  than dropped: a grant nobody can see is a grant nobody can revoke. */
+  orphanGrants: GrantCheck[];
+};
