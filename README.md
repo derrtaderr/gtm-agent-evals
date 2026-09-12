@@ -281,8 +281,25 @@ being re-examined.
 # exit 1
 ```
 
-Refusing at the door means the reviews file only ever holds reviews a reader can
-trust without knowing this rule exists.
+`--grants` is **required** on `review`, not optional, which is what makes that
+refusal unskippable. An earlier cut made it optional "for reviews recorded
+before any grant exists", and the result was that leaving one flag off silently
+skipped the rule — the granter could bless their own grant, and since
+`review_freshness` deliberately never re-checks independence at read time, that
+review held the grant. A rule you have to remember to ask for is not enforced.
+A grants file that does not exist yet reads as no grants, so the pre-grant case
+loses nothing.
+
+Every review recorded through this command has therefore passed the check, and a
+reader can trust the file without knowing the rule exists. (A hand-edited JSONL
+can hold anything, as it can in every store here.)
+
+**What the check catches, and what it cannot.** Ids are compared normalized, so
+`Jane`, `jane` and ` jane ` are one person and changing your own capitalization
+does not clear a conflict. It cannot catch two genuinely different identifiers
+belonging to one human — an alias, a second account, a personal address beside a
+work one. It is a guardrail against the accidental and the lazy, not an identity
+system.
 
 It ships **opt-in**, in `examples/falsifiers-with-review.json` rather than in the
 default registry. Making it a fifth default would turn every grant already on

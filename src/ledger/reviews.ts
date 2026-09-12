@@ -23,6 +23,19 @@ import type { AutonomyGrant, ReviewRecord, ReviewVerdict } from "../types.js";
 
 const VERDICTS: readonly ReviewVerdict[] = ["BLESS", "BLOCK"];
 
+/** Compare identities the way a human reads them: `Jane`, `jane` and ` jane `
+ *  are one person. Exact-string matching let a granter clear their own conflict
+ *  by changing the case of their own name, which is not a defence.
+ *
+ *  What this catches: the same identifier written differently. What it cannot
+ *  catch: two genuinely different identifiers belonging to one human — an alias,
+ *  a second account, a personal address beside a work one. That limit is real
+ *  and is stated in the README; the check is a guardrail against the accidental
+ *  and the lazy, not an identity system. */
+function sameIdentity(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 export type RecordReviewInput = {
   agentId: string;
   reviewerId: string;
@@ -35,9 +48,13 @@ export type RecordReviewInput = {
 export type RecordReviewOptions = {
   /** Injectable clock (ISO 8601); defaults to now. */
   timestamp?: string;
-  /** The grant store, so the granter-cannot-review rule can be enforced. When
-   *  omitted only the agent-cannot-review-itself rule applies — supply it
-   *  wherever grants exist, which the CLI always does. */
+  /** The grant store, so the granter-cannot-review rule can be enforced.
+   *
+   *  The CLI ALWAYS supplies this — `--grants` is required on `review`
+   *  precisely so the rule cannot be skipped by leaving a flag off. It stays
+   *  optional in this signature for library callers constructing a review
+   *  before any grant store exists; omitting it checks strictly less, and a
+   *  caller who omits it is choosing that. */
   grants?: AutonomyGrant[];
 };
 
@@ -66,7 +83,7 @@ export function recordReview(
   if (typeof agentId !== "string" || agentId.length === 0) {
     throw new ReviewRefused("review: --agent <id> is required; a review of nothing is not a review.");
   }
-  if (typeof reviewerId !== "string" || reviewerId.length === 0) {
+  if (typeof reviewerId !== "string" || reviewerId.trim().length === 0) {
     throw new ReviewRefused(
       "review: --reviewer <who> is required. An anonymous review cannot be checked for " +
         "independence, which is the only property that makes it worth recording.",
@@ -87,7 +104,7 @@ export function recordReview(
   }
 
   // Independence rule 1: an agent cannot certify itself.
-  if (reviewerId === agentId) {
+  if (sameIdentity(reviewerId, agentId)) {
     throw new ReviewRefused(
       `review: ${reviewerId} cannot review itself. The whole value of this falsifier is that ` +
         `somebody OTHER than the subject looked.`,
@@ -98,7 +115,7 @@ export function recordReview(
   // certifying it still deserves it. Archived grants count — the conflict is
   // historical, and archiving resolves an alarm, not a relationship.
   const conflict = (options.grants ?? []).find(
-    (g) => g.agentId === agentId && g.grantedBy === reviewerId,
+    (g) => g.agentId === agentId && sameIdentity(g.grantedBy, reviewerId),
   );
   if (conflict) {
     throw new ReviewRefused(
@@ -109,10 +126,13 @@ export function recordReview(
   }
 
   const timestamp = options.timestamp ?? new Date().toISOString();
+  // Stored trimmed so the file does not carry stray whitespace; case is
+  // preserved, because how somebody writes their own name is theirs.
+  const storedReviewer = reviewerId.trim();
   return {
-    id: reviewId(agentId, reviewerId, timestamp),
+    id: reviewId(agentId, storedReviewer, timestamp),
     agentId,
-    reviewerId,
+    reviewerId: storedReviewer,
     verdict,
     timestamp,
     evidence,

@@ -474,6 +474,24 @@ Enforcing at record time rather than at check time means the reviews file never
 holds a review that cannot be trusted, so a reader never has to know the rule to
 read the file safely.
 
+**`--grants` is required on `review`, and the requirement is the mechanism.**
+Session 2's first cut made it optional so a review could be recorded before any
+grant existed. That reasoning was right about the case and wrong about the fix:
+omitting the flag skipped the granter-conflict rule silently, and since
+`review_freshness` never re-checks independence at read time, a granter's own
+BLESS could hold their own grant. The store is now required and passed as an
+explicit path — not located by convention, because every other input to this CLI
+is an explicit argument so one install can serve several fleets, and a guessed
+path would guess wrong for exactly those. A missing file loads as no grants, so
+the pre-grant case is served without an escape hatch. No opt-out ships: an
+escape hatch would have to annotate the review record to stay honest, and a rule
+this cheap does not need one.
+
+Identity comparison is normalized (trimmed, case-folded), so a granter cannot
+clear their own conflict by re-capitalizing their name. It cannot defeat
+aliases or second accounts; that limit is stated in the README rather than left
+for a reader to discover.
+
 `review_not_stale` (check id `review_freshness`, param `maxReviewAgeDays`):
 
 | Condition | Status | Grant |

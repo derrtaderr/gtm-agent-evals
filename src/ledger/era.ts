@@ -61,7 +61,17 @@ export function runEra(event: TelemetryEvent, agent: AgentRecord): RunEra {
 
   // Rule 2: place it with the only lineage signal the registry carries.
   const boundary = Date.parse(agent.configSince);
-  if (Number.isNaN(boundary)) return "unknown-in-window";
+  if (Number.isNaN(boundary)) {
+    // Degrading to "in window" here would resolve a malformed record to the
+    // PERMISSIVE answer, which is the one direction this platform never fails
+    // in. The store validator refuses such a record at load; this covers a
+    // record built in memory that never passed through it.
+    throw new Error(
+      `agent "${agent.id}" has an unparseable configSince ("${agent.configSince}"), so no run's ` +
+        `era can be established against it. Refusing rather than counting the run as current-era ` +
+        `evidence.`,
+    );
+  }
   return Date.parse(event.timestamp) < boundary ? "unknown-pre-config" : "unknown-in-window";
 }
 

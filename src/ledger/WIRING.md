@@ -170,8 +170,11 @@ fixtures/ledger/           a synthetic three-agent fleet, calibrated to
   agent).
 - **`reviews.ts` — independent review.** `recordReview` enforces reviewer
   independence at WRITE time (never the agent, never the grant's `grantedBy`,
-  archived grants included), so the file only ever holds reviews a reader can
-  trust. `loadReviews` / `saveReview` / `latestReview` mirror the other stores.
+  archived grants included). `--grants` is REQUIRED on the `review` command so
+  the rule cannot be skipped by omitting a flag; every review recorded through
+  the CLI has passed it. Ids are compared normalized (case- and
+  whitespace-insensitive); aliases and second accounts are out of reach and
+  stated as such in the README. `loadReviews` / `saveReview` / `latestReview` mirror the other stores.
 - **`review_freshness` check + `review_not_stale`** — ships OUTSIDE
   `DEFAULT_FALSIFIER_REGISTRY`, in `examples/falsifiers-with-review.json`. A
   fifth default would flip every grant already on disk to SUSPECT for want of a
