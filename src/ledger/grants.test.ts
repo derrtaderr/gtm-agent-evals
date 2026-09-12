@@ -174,6 +174,41 @@ describe("prior-era evidence (the known config-lineage hole)", () => {
     expect(warnings.join("\n")).toMatch(/run-2 run-3/);
   });
 
+  // M-b: a warning that arrives after the decision is not a warning. The whole
+  // point is that the phrase the operator types is typed KNOWING this.
+  it("warns even when the confirmation phrase is wrong and the grant is refused", () => {
+    const warnings: string[] = [];
+    expect(() =>
+      createGrant(grantArgs({ agent: rotated, confirm: "wrong" }), {
+        ...at,
+        onWarn: (w) => warnings.push(w),
+      }),
+    ).toThrow(/confirmation/i);
+    expect(warnings.join("\n")).toMatch(/2 of the 3 runs/);
+  });
+
+  it("warns even when the streak is short and the grant is refused for evidence", () => {
+    const warnings: string[] = [];
+    expect(() =>
+      createGrant(grantArgs({ agent: rotated, events: [ev("PASS", 2)] }), {
+        ...at,
+        onWarn: (w) => warnings.push(w),
+      }),
+    ).toThrow(/streak/i);
+    expect(warnings.join("\n")).toMatch(/run-2/);
+  });
+
+  it("warns even when --granted-by is missing", () => {
+    const warnings: string[] = [];
+    expect(() =>
+      createGrant(grantArgs({ agent: rotated, grantedBy: "" }), {
+        ...at,
+        onWarn: (w) => warnings.push(w),
+      }),
+    ).toThrow(/granted-by/i);
+    expect(warnings).toHaveLength(1);
+  });
+
   it("still grants after warning — this is an informed confirmation, not a second gate", () => {
     const g = createGrant(grantArgs({ agent: rotated }), { ...at, onWarn: () => {} });
     expect(g.tier).toBe("auto");

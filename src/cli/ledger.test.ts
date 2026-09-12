@@ -235,6 +235,47 @@ describe("re-granting after a config rotation (the reviewer's B1 sequence)", () 
     expect(errText()).toMatch(/cannot yet tell which config produced a run/);
   });
 
+  it("prints the warning and REFUSES when the phrase is wrong — a dry attempt still informs", async () => {
+    await register(["--config-hash", "sha256:cccc3333", "--as-of", "2026-09-11T12:00:00.000Z"]);
+    out = [];
+    err = [];
+    const code = await grantAuto(["--confirm", "yes", "--as-of", "2026-09-11T13:00:00.000Z"]);
+
+    expect(code).toBe(1);
+    expect(errText()).toMatch(/3 of the 3 runs/);
+    expect(errText()).toMatch(/--confirm "grant auto to example-enricher"/);
+    // The block's first grant is already on file; what must not happen is a
+    // SECOND one being written by a refused attempt.
+    expect(readFileSync(grants, "utf8").trim().split("\n")).toHaveLength(1);
+  });
+
+  it("emits the warning BEFORE the grant is announced, in one interleaved stream", async () => {
+    await register(["--config-hash", "sha256:cccc3333", "--as-of", "2026-09-11T12:00:00.000Z"]);
+    // Both streams into one ordered log — ordering across out/err is the whole
+    // claim, and two separate arrays cannot express it.
+    const log: string[] = [];
+    const ordered: CliIo = {
+      out: (l) => log.push(`out: ${l}`),
+      err: (l) => log.push(`err: ${l}`),
+      env: {},
+    };
+    const code = await run(
+      [
+        "grant", "--agents", agents, "--grants", grants, "--telemetry", telemetry,
+        "--agent", "example-enricher", "--tier", "auto",
+        "--confirm", "grant auto to example-enricher", "--granted-by", "operator",
+        "--as-of", "2026-09-11T13:00:00.000Z",
+      ],
+      ordered,
+    );
+    expect(code).toBe(0);
+    const warnAt = log.findIndex((l) => l.includes("runs this grant rests on"));
+    const grantAt = log.findIndex((l) => l.startsWith("out: granted auto"));
+    expect(warnAt).toBeGreaterThanOrEqual(0);
+    expect(grantAt).toBeGreaterThanOrEqual(0);
+    expect(warnAt).toBeLessThan(grantAt);
+  });
+
   it("stays quiet when the streak really was recorded under the current registration", async () => {
     await grantAuto(["--tier", "advisory", "--confirm", "grant advisory to example-enricher"]);
     expect(errText()).not.toMatch(/prior|BEFORE/);

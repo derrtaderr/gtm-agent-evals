@@ -34,7 +34,9 @@ export function renderLedgerTable(io: LedgerIo, ledger: Ledger): void {
       return [
         a.agentId,
         a.effectiveTier,
-        top ? top.status : "—",
+        // An archived grant confers no tier, so a bare "VALID" here would read
+        // as live authority that the agent does not have.
+        top ? `${top.status}${top.archived ? " (archived)" : ""}` : "—",
         incidentMarker(a),
         `${a.streak}/${a.gateN}${a.eligible ? " *" : ""}`,
         a.lastVerdict ?? "—",
