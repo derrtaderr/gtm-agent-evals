@@ -43,7 +43,12 @@ export function ledgerEntry(
   const own = grantsForAgent(grants, agent.id);
   const checks = own.map((g) => checkGrant(g, { ...deps, agents: [agent] }));
 
-  const holding = checks.filter((c) => c.status === "VALID").map((c) => c.tier);
+  // An archived grant confers nothing. That makes archiving the manual-revoke
+  // path as well as the incident-resolution path: retiring a grant that still
+  // holds is a deliberate demotion, recorded rather than deleted.
+  const holding = checks
+    .filter((c) => c.status === "VALID" && !c.archived)
+    .map((c) => c.tier);
   const events = deps.events ?? [];
   const streak = deps.events === undefined ? 0 : agentStreak(events, agent);
   const last = deps.events === undefined ? undefined : lastEvent(events, agent);

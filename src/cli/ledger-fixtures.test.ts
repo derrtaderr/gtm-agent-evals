@@ -45,7 +45,7 @@ describe("the bundled ledger fixtures", () => {
       io,
     );
     expect(code).toBe(5);
-    expect(text()).toContain("summary: 2 grant(s) — 1 VALID, 0 SUSPECT, 1 REVOKED");
+    expect(text()).toContain("summary: 2 unarchived grant(s) — 1 VALID, 0 SUSPECT, 1 REVOKED");
   });
 
   it("names the falsifier and the evidence behind the revocation", async () => {
@@ -73,7 +73,7 @@ describe("the bundled ledger fixtures", () => {
       io,
     );
     expect(code).toBe(5);
-    expect(text()).toContain("summary: 2 grant(s) — 1 VALID, 0 SUSPECT, 1 REVOKED");
+    expect(text()).toContain("summary: 2 unarchived grant(s) — 1 VALID, 0 SUSPECT, 1 REVOKED");
   });
 
   it("shows the whole evidence chain for the agent that holds auto", async () => {

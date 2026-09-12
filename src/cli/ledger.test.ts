@@ -315,6 +315,88 @@ describe("check", () => {
   });
 });
 
+// M1: a handled incident must be able to return CI to green without anybody
+// hand-editing JSONL.
+describe("archive", () => {
+  let grantIdValue: string;
+  beforeEach(async () => {
+    await register();
+    writeTelemetry(cleanThree);
+    await grantAuto();
+    await register(["--config-hash", "sha256:cccc3333", "--as-of", "2026-09-11T12:00:00.000Z"]);
+    grantIdValue = JSON.parse(readFileSync(grants, "utf8").trim().split("\n")[0]).id;
+    out = [];
+    err = [];
+  });
+
+  const check = (over: string[] = []): Promise<number> =>
+    run(["check", "--agents", agents, "--grants", grants, "--telemetry", telemetry, "--as-of", ASOF, ...over], io);
+
+  const archive = (over: string[] = []): Promise<number> =>
+    run(
+      [
+        "archive", "--grants", grants, "--grant", grantIdValue,
+        "--confirm", `archive ${grantIdValue}`, "--archived-by", "operator",
+        "--as-of", "2026-09-12T00:00:00.000Z", ...over,
+      ],
+      io,
+    );
+
+  it("check alarms with exit 5 before the incident is resolved", async () => {
+    expect(await check()).toBe(5);
+  });
+
+  it("returns check to exit 0 once the revoked grant is archived", async () => {
+    expect(await archive()).toBe(0);
+    out = [];
+    expect(await check()).toBe(0);
+  });
+
+  it("keeps the revoked grant and its falsifier visible in the report", async () => {
+    await archive();
+    out = [];
+    await check();
+    expect(text()).toContain(grantIdValue);
+    expect(text()).toContain("REVOKED");
+    expect(text()).toMatch(/archived/i);
+    expect(text()).toContain("config_hash_unchanged");
+  });
+
+  it("records who archived it, readable in the agent detail view", async () => {
+    await archive();
+    out = [];
+    await run(
+      ["status", "--agents", agents, "--grants", grants, "--telemetry", telemetry,
+       "--agent", "example-enricher", "--as-of", ASOF],
+      io,
+    );
+    expect(text()).toMatch(/archived 2026-09-12T00:00:00\.000Z by operator/);
+  });
+
+  it("exits 1 on a confirmation phrase that does not name this grant", async () => {
+    expect(await archive(["--confirm", "archive it"])).toBe(1);
+    expect(errText()).toContain(`archive ${grantIdValue}`);
+  });
+
+  it("exits 1 for a grant id that is not in the ledger", async () => {
+    const code = await run(
+      ["archive", "--grants", grants, "--grant", "no-such-grant",
+       "--confirm", "archive no-such-grant", "--archived-by", "operator"],
+      io,
+    );
+    expect(code).toBe(1);
+    expect(errText()).toMatch(/no-such-grant/);
+  });
+
+  it("exits 1 rather than silently re-archiving", async () => {
+    await archive();
+    out = [];
+    err = [];
+    expect(await archive()).toBe(1);
+    expect(errText()).toMatch(/already archived/i);
+  });
+});
+
 describe("status", () => {
   beforeEach(async () => {
     await register();

@@ -150,6 +150,26 @@ describe("checkGrant", () => {
   });
 });
 
+describe("archived grants", () => {
+  const archived: AutonomyGrant = {
+    ...grant,
+    archivedAt: "2026-09-11T00:00:00.000Z",
+    archivedBy: "operator",
+  };
+
+  it("marks the check as archived", () => {
+    expect(checkGrant(archived, deps()).archived).toBe(true);
+    expect(checkGrant(grant, deps()).archived).toBe(false);
+  });
+
+  it("still evaluates and reports the falsifiers — archiving silences the alarm, not the facts", () => {
+    const rotated = { ...agent, configHash: "sha256:bbbb2222" };
+    const c = checkGrant(archived, deps({ agents: [rotated] }));
+    expect(c.status).toBe("REVOKED");
+    expect(c.falsifiers.find((r) => r.falsifier === "config_hash_unchanged")?.status).toBe("BROKEN");
+  });
+});
+
 describe("checkGrants", () => {
   it("checks every grant in the store", () => {
     const other: AutonomyGrant = { ...grant, id: "other", tier: "advisory" };

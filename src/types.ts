@@ -227,6 +227,13 @@ export type AutonomyGrant = {
   evidence: GrantEvidence;
   /** Falsifier ids from the registry that must keep holding. */
   falsifiers: string[];
+  /** Set once an operator has explicitly RESOLVED this grant. An archived grant
+   *  confers no tier and is excluded from `check`'s exit code, but stays in the
+   *  ledger and in every detail view. Without this, a revoked grant alarms
+   *  forever, and an alarm that can never be cleared is an alarm that gets
+   *  ignored. Archiving is annotation, never deletion. */
+  archivedAt?: string;
+  archivedBy?: string;
 };
 
 /** One named fact that must stay true, as DATA. `check` names a function in the
@@ -267,6 +274,14 @@ export type GrantCheck = {
   status: GrantStatus;
   falsifiers: FalsifierResult[];
   checkedAt: string;
+  /** True when an operator has resolved this grant. The falsifiers are still
+   *  evaluated and still reported — archiving silences the ALARM, never the
+   *  facts. */
+  archived: boolean;
+  /** Carried through from the grant so every surface can show who resolved an
+   *  incident without re-joining against the grant store. */
+  archivedAt?: string;
+  archivedBy?: string;
 };
 
 /** One agent's row in the ledger: what it may do unattended right now, and the

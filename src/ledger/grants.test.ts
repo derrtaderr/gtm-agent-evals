@@ -10,6 +10,8 @@ import {
   loadGrants,
   grantsForAgent,
   priorEraRuns,
+  archiveGrant,
+  archiveConfirmationPhrase,
 } from "./grants.js";
 import { registerAgent } from "./agents.js";
 import { DEFAULT_FALSIFIER_REGISTRY } from "./falsifiers.js";
@@ -181,6 +183,60 @@ describe("prior-era evidence (the known config-lineage hole)", () => {
     const warnings: string[] = [];
     createGrant(grantArgs(), { ...at, onWarn: (w) => warnings.push(w) });
     expect(warnings).toEqual([]);
+  });
+});
+
+// M1: a revoked grant is never deleted, so without an explicit resolution
+// mechanic `check` alarms forever after any historical incident. Archiving is
+// how an operator says "handled" — on the record, with their name on it.
+describe("archiveGrant", () => {
+  const g = createGrant(grantArgs(), at);
+  const archiveAt = { archivedAt: "2026-09-20T00:00:00.000Z" };
+
+  it("requires a confirmation phrase naming the exact grant", () => {
+    expect(archiveConfirmationPhrase(g.id)).toBe(`archive ${g.id}`);
+    expect(() => archiveGrant(g, { confirm: "yes", archivedBy: "operator" }, archiveAt)).toThrow(
+      new RegExp(`archive ${g.id}`),
+    );
+  });
+
+  it("records who archived it and when", () => {
+    const a = archiveGrant(
+      g,
+      { confirm: archiveConfirmationPhrase(g.id), archivedBy: "operator" },
+      archiveAt,
+    );
+    expect(a.archivedAt).toBe("2026-09-20T00:00:00.000Z");
+    expect(a.archivedBy).toBe("operator");
+  });
+
+  it("refuses an anonymous archive — resolving an incident is also a human act", () => {
+    expect(() =>
+      archiveGrant(g, { confirm: archiveConfirmationPhrase(g.id), archivedBy: "" }, archiveAt),
+    ).toThrow(/archived-by/i);
+  });
+
+  it("preserves every other field — archiving is annotation, never deletion", () => {
+    const a = archiveGrant(
+      g,
+      { confirm: archiveConfirmationPhrase(g.id), archivedBy: "operator" },
+      archiveAt,
+    );
+    expect(a.id).toBe(g.id);
+    expect(a.tier).toBe(g.tier);
+    expect(a.evidence).toEqual(g.evidence);
+    expect(a.falsifiers).toEqual(g.falsifiers);
+  });
+
+  it("refuses to archive a grant that is already archived", () => {
+    const a = archiveGrant(
+      g,
+      { confirm: archiveConfirmationPhrase(g.id), archivedBy: "operator" },
+      archiveAt,
+    );
+    expect(() =>
+      archiveGrant(a, { confirm: archiveConfirmationPhrase(g.id), archivedBy: "operator" }, archiveAt),
+    ).toThrow(/already archived/i);
   });
 });
 

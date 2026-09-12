@@ -39,7 +39,7 @@ import {
   validateFreshPairs,
 } from "./load.js";
 import { printVerdict, printRegression } from "./print.js";
-import { LEDGER_OPTIONS, cmdRegister, cmdGrant, cmdCheck, cmdStatus } from "./ledger.js";
+import { LEDGER_OPTIONS, cmdRegister, cmdGrant, cmdArchive, cmdCheck, cmdStatus } from "./ledger.js";
 import { defaultIo, type CliIo } from "./io.js";
 
 export type { CliIo } from "./io.js";
@@ -254,12 +254,14 @@ Decide what an agent may do unattended (the ledger):
            [--eval-configs a,b] [--gate-n <N>] [--description <d>]
   grant    --agents <a> --grants <g> --telemetry <e> --agent <id> --tier <advisory|auto>
            --confirm "grant <tier> to <id>" --granted-by <who> [--note <n>] [--falsifiers <r.json>]
+  archive  --grants <g> --grant <grant-id> --confirm "archive <grant-id>" --archived-by <who>
   check    --agents <a> --grants <g> [--telemetry <e>] [--falsifiers <r.json>] [--as-of <iso>] [--out <l.json>]
   status   --agents <a> --grants <g> [--telemetry <e>] [--agent <id>] [--as-of <iso>] [--out <l.json>]
 
 A clean-run streak makes an agent ELIGIBLE. Only \`grant\` promotes, and only with
 the confirmation phrase typed exactly. \`check\` re-tests the facts each grant
-depends on and demotes the agent when one breaks.
+depends on and demotes the agent when one breaks. \`archive\` resolves a handled
+incident so it stops alarming, without deleting it from the record.
 
 Exit codes: 0 PASS, 1 usage, 2 unreadable/malformed input, 3 BLOCK, 4 REGRESSION,
 5 AUTONOMY (a grant is not VALID, or was refused for lack of evidence).
@@ -288,6 +290,9 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
       case "grant":
         rejectUnknownOptions(options, "grant");
         return cmdGrant(options, io);
+      case "archive":
+        rejectUnknownOptions(options, "archive");
+        return cmdArchive(options, io);
       case "check":
         rejectUnknownOptions(options, "check");
         return cmdCheck(options, io);

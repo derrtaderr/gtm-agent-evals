@@ -161,6 +161,60 @@ export function createGrant(
   };
 }
 
+/** The exact sentence a human must type to archive one grant. Names the grant
+ *  id so a phrase cannot be replayed against a different row. */
+export function archiveConfirmationPhrase(id: string): string {
+  return `archive ${id}`;
+}
+
+export type ArchiveGrantInput = {
+  /** Must equal archiveConfirmationPhrase(grant.id) exactly. */
+  confirm: string;
+  archivedBy: string;
+};
+
+export type ArchiveGrantOptions = { archivedAt?: string };
+
+/** Resolve a grant: mark it handled so it stops driving `check`'s exit code.
+ *
+ *  This is the answer to a revoked grant alarming forever. Deleting the row
+ *  would work too and would be much worse — the ledger's whole value is that
+ *  "this agent held auto and lost it on the 14th" survives. So archiving
+ *  annotates: every field is preserved, the grant stays in every detail view,
+ *  and the operator's name and the date go on the record beside it.
+ *
+ *  An archived grant also confers no tier, which makes this the manual revoke
+ *  path as well: archiving a grant that still holds retires it deliberately. */
+export function archiveGrant(
+  grant: AutonomyGrant,
+  input: ArchiveGrantInput,
+  options: ArchiveGrantOptions = {},
+): AutonomyGrant {
+  if (grant.archivedAt) {
+    throw new GrantRefused(
+      `archive: grant ${grant.id} is already archived (by ${grant.archivedBy ?? "unknown"} ` +
+        `on ${grant.archivedAt}).`,
+    );
+  }
+  if (typeof input.archivedBy !== "string" || input.archivedBy.length === 0) {
+    throw new GrantRefused(
+      "archive: --archived-by is required. Resolving an incident is a human act too, and an " +
+        "anonymous resolution is indistinguishable from the alarm never having fired.",
+    );
+  }
+  const required = archiveConfirmationPhrase(grant.id);
+  if (input.confirm !== required) {
+    throw new GrantRefused(
+      `archive: confirmation does not match. Re-run with --confirm "${required}" (typed exactly).`,
+    );
+  }
+  return {
+    ...grant,
+    archivedAt: options.archivedAt ?? new Date().toISOString(),
+    archivedBy: input.archivedBy,
+  };
+}
+
 /** Read the grant ledger. A corrupt or wrong-shaped line throws naming the line
  *  number — including a line whose `tier` is outside the vocabulary, because an
  *  unrecognized tier is exactly the value that must never be read leniently. */
