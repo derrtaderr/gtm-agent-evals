@@ -365,6 +365,153 @@ removed**, which is what keeps all 293 prior tests green.
   confers no tier, so retiring one deliberately is a recorded act rather than a
   hand edit.
 
+# Lane G session 2 — closing the config-lineage hole (added 2026-09-11)
+
+Session 1 built the ledger and named the hole it could not close. This session
+closes it, adds independent review as a falsifier input, renders the fleet, and
+repositions the README front door. Lane id: `lane-49b-suite-s2-builder`.
+
+## 1. Config-scoped eligibility — the real fix
+
+### The additive telemetry change
+
+`TelemetryEvent` gains two OPTIONAL fields. Nothing existing changes type or
+meaning, so every event ever written stays readable:
+
+```ts
+agentId?: string;          // which agent produced this run
+agentConfigHash?: string;  // the agent's config hash AT RUN TIME
+```
+
+`agentConfigHash` is the load-bearing one. `agentId` exists so a run can be
+attributed without joining through `configIds`, and so a shared eval config
+serving two agents is not ambiguous.
+
+### Run eras, and how an unattributed run is placed
+
+Every run in an agent's evidence stream is classified relative to that agent:
+
+| Era | When | Counts toward eligibility |
+|---|---|---|
+| `current` | `agentConfigHash === agent.configHash` | **Yes — verified.** Attribution is proof. |
+| `prior` | `agentConfigHash` present and different | **No.** Authoritatively a different version of the agent. |
+| `unknown-in-window` | no `agentConfigHash`, `timestamp >= agent.configSince` | **Yes — counted but UNVERIFIED.** Named loudly on every surface. |
+| `unknown-pre-config` | no `agentConfigHash`, `timestamp < agent.configSince` | **No.** Recorded before the current config existed, so it provably did not produce it. |
+
+The last two rows are the migration story, and the inference behind them is the
+one `priorEraRuns` already makes in session 1: a run predating `configSince`
+was produced before this configuration existed. Extending that from a warning
+to an exclusion is the fix.
+
+**The UNKNOWN-era treatment decision, stated once.** A pre-upgrade event carries
+no config hash, so its era cannot be *proven*. The ledger does not therefore
+throw it away — a blanket exclusion would zero every existing operator's streak
+on upgrade and make the tool's first act after an install be a lie about their
+fleet. It places the run with the only lineage signal it has, the registry's
+`configSince`, and then **says so**: an in-window unattributed run is
+counted-but-unverified, and `grant`, `status --agent`, and the dashboard each
+name the count and the reason. Inference is not proof; attribution is what makes
+a run verified, and new runs produce attribution.
+
+What that buys, precisely: **the rotation exploit is CLOSED.** Rotating a config
+moves `configSince` forward, which puts every existing run behind the boundary,
+which empties the current-era streak, which makes the immediate re-grant fail
+with `InsufficientEvidence`. The residual is narrower and is named in the README
+rather than buried: an unattributed run recorded *after* a rotation is counted on
+the registry's word. Running that agent's evals with `--agent` removes even that.
+
+### The streak, restated
+
+The current-era streak is the run of clean, eligibility-counting runs at the
+**tail** of the agent's evidence stream. Anything else ends it:
+
+- a `BLOCK` from any era ends it — a recorded failure is never ignored, the same
+  direction `--as-of` already fails in;
+- a `prior` or `unknown-pre-config` run ends it, because the walk has left the
+  current configuration's evidence and everything behind it belongs to an agent
+  that no longer exists.
+
+`AgentLedgerEntry.streak` narrows to this current-era number, because `streak`
+is what `eligible` is computed from and what the table prints, and a row whose
+`*` promises a grant that `grant` would refuse is the ledger lying at a glance.
+The all-era number is preserved additively as `observedStreak` — it is still the
+useful health signal, it is just not the eligibility question.
+
+### The eval CLI becomes agent-aware
+
+`eval` and `record` accept `--agents <agents.jsonl> --agent <id>`. The operator
+names the agent; the **registry supplies the hash**, so the two can never drift
+through a typo. An unknown agent id is a refusal, not an unattributed run.
+Omitting the flags keeps the old behavior and writes an unattributed event.
+
+## 2. Independent review as a falsifier input
+
+A grant rests on runs the agent produced. Nothing in it rests on a *person*
+having looked. `ReviewRecord` is that input:
+
+```ts
+type ReviewVerdict = "BLESS" | "BLOCK";
+type ReviewRecord = {
+  id: string; agentId: string; reviewerId: string;
+  verdict: ReviewVerdict; timestamp: string;
+  evidence: string;  // pointer to the review: URL, path, commit
+  note?: string;
+};
+```
+
+Appended to a reviews JSONL, same store shape as agents and grants.
+
+**Reviewer independence is enforced at record time, loudly.** A review is
+refused when `reviewerId === agentId` (an agent cannot review itself) or when
+`reviewerId` equals the `grantedBy` of any grant on that agent (the person who
+granted the autonomy cannot be the one certifying it still deserves it).
+Enforcing at record time rather than at check time means the reviews file never
+holds a review that cannot be trusted, so a reader never has to know the rule to
+read the file safely.
+
+`review_not_stale` (check id `review_freshness`, param `maxReviewAgeDays`):
+
+| Condition | Status | Grant |
+|---|---|---|
+| no reviews source supplied | `UNEVALUABLE` | SUSPECT |
+| a `BLOCK` review at/after `grantedAt` | `BROKEN` | **REVOKED** |
+| no review since the grant | `DEGRADED` | SUSPECT |
+| newest `BLESS` older than `maxReviewAgeDays` | `DEGRADED` | SUSPECT |
+| newest `BLESS` inside the window | `HOLDS` | — |
+
+**It ships OUTSIDE `DEFAULT_FALSIFIER_REGISTRY`**, as `examples/falsifiers-with-review.json`.
+Adding a fifth default would make every grant already on disk go SUSPECT the
+moment this version installs, for want of a reviews file nobody has written yet
+— the same alarm-fatigue failure that `archive` exists to prevent. Review
+cadence is an operator policy, so it is opt-in data.
+
+This cites ship-check's CONTRACT pattern (independent adversarial review as a
+scheduled input) and reimplements it here. No dependency on that repo.
+
+## 3. Fleet dashboard
+
+`buildViewModel` takes an optional `ledger`, adding a fleet section: per-agent
+effective tier, top grant status, INCIDENT flags, falsifier health, streak, and
+review recency. The dashboard CLI gains `--ledger <ledger.json>`, reading what
+`check --out` / `status --out` already write. Still one self-contained file, no
+server, and every ledger-origin string goes through `escapeHtml` — this surface
+took an XSS finding once.
+
+## 4. README positioning
+
+The front door reframes to what the repo now is: evals, regression, telemetry,
+and the autonomy ledger as one suite answering *has this agent earned autonomy*.
+Never a fifth "-gate". The Receipts section keeps its BLOCK-first history. A
+short "Relationship to earn-autonomy" note records that that repo pioneered the
+graduation mechanic this platform absorbed; naming consolidation is a decision
+above this PR.
+
+## Session-2 non-goals
+
+Naming consolidation with `earn-autonomy`; hosted or multi-tenant anything;
+per-task-class tiers; a scheduled re-check ledger; redaction-gate egress wiring;
+a write lock on the JSONL stores (still single-writer).
+
 ## Iteration log
 
 - 2026-09-06 — spec locked, `types.ts` committed, scope = full platform ("go
@@ -378,3 +525,18 @@ removed**, which is what keeps all 293 prior tests green.
   config lineage; `AgentRecord` gained `configSince`; `archive` added as the
   incident-resolution mechanic; the status table gained an `INCIDENT` column.
   The eligibility fix itself remains session 2.
+- 2026-09-11 — session 2 (`lane-49b-suite-s2-builder`). **This session retires
+  the session-1 mitigation policy by design.** S1 could not scope eligibility, so
+  it chose "warn loudly and allow the informed confirmation" and wrote that
+  choice into three tests — most explicitly `src/cli/ledger.test.ts`, which
+  asserted `expect(code).toBe(0)` on a post-rotation re-grant under the comment
+  `// still allowed — this is an informed confirmation, not a new gate`. With
+  config-scoped eligibility that sequence must refuse, so those three assertion
+  sites are rewritten to assert the refusal; the warning assertions are kept
+  wherever the warning still fires (it fires, then the refusal follows).
+  Provenance: two independent reviews scoped this fix to session 2, and the
+  session-2 dispatch amended its own "all 504 tests unmodified" constraint after
+  this lane reported the contradiction rather than quietly editing the
+  assertions that would have revealed the behavior change. The blast-radius
+  guard is now the 293 platform-era tests from `a56edc2`, which stay untouched.
+  Baseline before this session: 504 green on `a35b1d7`.
