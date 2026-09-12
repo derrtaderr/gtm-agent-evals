@@ -158,12 +158,39 @@ fixtures/ledger/           a synthetic three-agent fleet, calibrated to
   "unarchived" summary shipped with two stale example blocks. Adding a verified
   example is one comment line above the fence.
 
+## Session 2 additions
+
+- **`era.ts` — config-scoped eligibility.** `runEra(event, agent)` places every
+  run as `current` / `prior` / `unknown-in-window` / `unknown-pre-config`;
+  `currentEraStreak` and `eligibilityEvidence` are what `createGrant` refuses
+  against and what `AgentLedgerEntry.streak` reports. Attribution is proof, the
+  clock is the fallback for unattributed runs, and a never-rotated agent's runs
+  are always in-window (without that guard a first registration excludes its own
+  evidence, since runs almost always predate the day somebody registered the
+  agent).
+- **`reviews.ts` — independent review.** `recordReview` enforces reviewer
+  independence at WRITE time (never the agent, never the grant's `grantedBy`,
+  archived grants included), so the file only ever holds reviews a reader can
+  trust. `loadReviews` / `saveReview` / `latestReview` mirror the other stores.
+- **`review_freshness` check + `review_not_stale`** — ships OUTSIDE
+  `DEFAULT_FALSIFIER_REGISTRY`, in `examples/falsifiers-with-review.json`. A
+  fifth default would flip every grant already on disk to SUSPECT for want of a
+  reviews file. BLOCK review → BROKEN → REVOKED; no or stale review → DEGRADED
+  → SUSPECT; no source → UNEVALUABLE.
+- **CLI:** `review` command; `--reviews` on `check` and `status`;
+  `--agents/--agent` on `eval` and `record`.
+- **`AgentLedgerEntry`** gains `observedStreak`, `verifiedRuns`,
+  `unverifiedRuns`, `excludedRuns`, and the `lastReview*` fields; `streak` and
+  `eligible` narrowed to the config-scoped question so the table's `*` can never
+  promise a grant that `grant` would refuse.
+
 ## Known limitations (see SPEC.md and the README for the full statement)
 
-- **Eligibility has no config scope.** `TelemetryEvent` carries no config hash,
-  so a streak earned by a previous version of an agent can support a grant for
-  the current one. Mitigated by the `configSince` warning above and by grant
-  surfaces that never claim run-era lineage; the real fix is session 2.
+- **Unattributed runs are placed by inference, not proof.** An event written
+  before session 2 carries no config hash, so an in-window one is counted as
+  UNVERIFIED and named as such on every surface. The rotation exploit is closed
+  regardless (rotating moves `configSince` past every run on disk); full
+  per-run verification needs attributed telemetry, which `--agent` produces.
 - **No write lock on the JSONL stores.** Concurrent writers can lose a write.
   Fail-safe in direction (the surviving state is the more alarming one).
 - **`--as-of` does not cap future-dated events.** A BLOCK from the future still
@@ -171,7 +198,6 @@ fixtures/ledger/           a synthetic three-agent fleet, calibrated to
 
 ## Not in this session (see SPEC.md for the full list)
 
-Dashboard rendering of `--out` (the JSON ships; the view is session 2),
-ship-check review as a fifth falsifier, per-task-class tiers, a scheduled
-re-check ledger with carried-forward verdicts, a manual `revoke` command, and
-the `earn-autonomy` naming consolidation.
+Per-task-class tiers, a scheduled re-check ledger with carried-forward verdicts,
+a manual `revoke` command, redaction-gate egress wiring, hosted or multi-tenant
+anything, and the `earn-autonomy` naming consolidation.
