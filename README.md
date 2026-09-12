@@ -163,11 +163,12 @@ autonomy ledger — 2026-09-07T00:00:00.000Z
 AGENT               TIER        GRANT    INCIDENT          STREAK  LAST   FALSIFIERS
 example-enricher    auto        VALID    —                 3/3 *   PASS   4/4 holding
 example-drafter     supervised  —        —                 0/3     BLOCK  —
-example-researcher  supervised  REVOKED  advisory REVOKED  3/3 *   PASS   3/4 holding
+example-researcher  supervised  REVOKED  advisory REVOKED  0/3     PASS   3/4 holding
 
 STREAK is clean runs against the agent's gateN; * marks an agent eligible for a grant.
 Eligibility is not autonomy — a grant is a human decision (see the `grant` command).
 INCIDENT lists grants that are not holding. The effective tier already accounts for them; resolve one with `archive` once it is handled.
+3 run(s) are EXCLUDED from eligibility: they were produced by a configuration that is no longer on file, so they cannot earn a grant for the current one.
 # exit 0
 ```
 

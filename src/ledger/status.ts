@@ -13,6 +13,7 @@
 
 import { checkGrant } from "./check.js";
 import { agentStreak, lastEvent } from "./evidence.js";
+import { eligibilityEvidence } from "./era.js";
 import { grantsForAgent } from "./grants.js";
 import { highestTier, SUPERVISED, tierRank } from "./tiers.js";
 import { clearedForAutonomy } from "../runlog/index.js";
@@ -50,7 +51,15 @@ export function ledgerEntry(
     .filter((c) => c.status === "VALID" && !c.archived)
     .map((c) => c.tier);
   const events = deps.events ?? [];
-  const streak = deps.events === undefined ? 0 : agentStreak(events, agent);
+  // Eligibility is config-scoped; the observed streak is kept beside it. A row
+  // whose `*` promises a grant that `grant` would refuse is the ledger lying at
+  // a glance, so these two numbers are reported separately rather than fused.
+  const evidence =
+    deps.events === undefined
+      ? { streak: 0, runIds: [], verified: 0, unverified: 0, excluded: [] }
+      : eligibilityEvidence(events, agent);
+  const streak = evidence.streak;
+  const observedStreak = deps.events === undefined ? 0 : agentStreak(events, agent);
   const last = deps.events === undefined ? undefined : lastEvent(events, agent);
 
   const grantedTiers = [...new Set(own.map((g) => g.tier))].sort(
@@ -64,6 +73,10 @@ export function ledgerEntry(
     grantedTiers,
     checks,
     streak,
+    observedStreak,
+    verifiedRuns: evidence.verified,
+    unverifiedRuns: evidence.unverified,
+    excludedRuns: evidence.excluded.length,
     gateN: agent.gateN,
     eligible: clearedForAutonomy(streak, agent.gateN),
     ...(last ? { lastVerdict: last.verdict.status, lastRunAt: last.timestamp } : {}),
