@@ -133,6 +133,20 @@ describe("renderLedgerTable", () => {
     expect(c.text()).not.toContain("auto REVOKED");
   });
 
+  // L-b: an archived grant is not a live one, and the glance column must not
+  // let the two be read the same way.
+  it("never shows a bare VALID for a grant that has been archived", () => {
+    const retired = {
+      ...grant("auto", "sha256:current"),
+      archivedAt: "2026-09-10T00:00:00.000Z",
+      archivedBy: "operator",
+    };
+    const c = capture();
+    renderLedgerTable(c.io, buildLedger([enricher], [retired], deps));
+    expect(c.text()).toMatch(/example-enricher\s+supervised/);
+    expect(c.text()).toContain("VALID (archived)");
+  });
+
   it("lists orphan grants under their own heading when some exist", () => {
     const ghost = { ...grant("auto", "sha256:current"), agentId: "example-ghost" };
     const c = capture();

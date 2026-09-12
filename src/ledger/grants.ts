@@ -92,6 +92,28 @@ export function priorEraRuns(
 /** Build a grant, or refuse with the reason. Every refusal names what would fix
  *  it, because the operator reading it is mid-promotion and the alternative is
  *  guessing. */
+/** Emit the prior-era caveat, if there is one. Called before every refusal path
+ *  in createGrant, so the caveat reaches the operator while the decision is
+ *  still theirs to make. */
+function warnOnPriorEraEvidence(
+  agent: AgentRecord,
+  events: TelemetryEvent[],
+  runIds: string[],
+  onWarn: ((message: string) => void) | undefined,
+): void {
+  if (!onWarn) return;
+  const priorEra = priorEraRuns(agent, events, runIds);
+  if (priorEra.length === 0) return;
+  onWarn(
+    `${priorEra.length} of the ${runIds.length} runs this grant rests on were recorded BEFORE ` +
+      `${agent.id}'s current config was registered (${agent.configSince}), so they were not produced by ` +
+      `the configuration now on file (${agent.configHash}): ` +
+      `${priorEra.map((e) => e.runId).join(" ")}. ` +
+      `The platform cannot yet tell which config produced a run — see the config-lineage ` +
+      `limitation in the README. Confirm only if you know those runs still represent this agent.`,
+  );
+}
+
 export function createGrant(
   input: CreateGrantInput,
   options: CreateGrantOptions = {},
@@ -104,6 +126,17 @@ export function createGrant(
         `Grant "advisory" or "auto".`,
     );
   }
+  // The evidence is read and any caveat about it is emitted BEFORE the first
+  // refusal, because a warning that arrives after the decision is not a warning.
+  // In the one-command flow the operator types the confirmation phrase and the
+  // tool answers; if the caveat only printed on the success path, the phrase
+  // would have been typed uninformed, and a refused or dry attempt — exactly the
+  // attempt somebody makes while deciding — would print nothing at all.
+  const streak = agentStreak(events, agent);
+  const own = agentEvents(events, agent);
+  const runIds = own.slice(own.length - streak).map((e) => e.runId);
+  warnOnPriorEraEvidence(agent, events, runIds, options.onWarn);
+
   if (typeof grantedBy !== "string" || grantedBy.length === 0) {
     throw new GrantRefused("grant: --granted-by is required; a grant with no human on it is not a grant.");
   }
@@ -116,7 +149,6 @@ export function createGrant(
     );
   }
 
-  const streak = agentStreak(events, agent);
   if (!clearedForAutonomy(streak, agent.gateN)) {
     const why =
       agent.configIds.length === 0
@@ -129,20 +161,6 @@ export function createGrant(
   }
 
   const grantedAt = options.grantedAt ?? new Date().toISOString();
-  const own = agentEvents(events, agent);
-  const runIds = own.slice(own.length - streak).map((e) => e.runId);
-
-  const priorEra = priorEraRuns(agent, events, runIds);
-  if (priorEra.length > 0 && options.onWarn) {
-    options.onWarn(
-      `${priorEra.length} of the ${runIds.length} runs this grant rests on were recorded BEFORE ` +
-        `${agent.id}'s current config was registered (${agent.configSince}), so they were not produced by ` +
-        `the configuration now on file (${agent.configHash}): ` +
-        `${priorEra.map((e) => e.runId).join(" ")}. ` +
-        `The platform cannot yet tell which config produced a run — see the config-lineage ` +
-        `limitation in the README. Confirm only if you know those runs still represent this agent.`,
-    );
-  }
 
   return {
     id: grantId(agent.id, tier, grantedAt),
