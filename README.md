@@ -29,7 +29,7 @@ agent the way tests gate a deploy, and keeps a record.
 ```bash
 git clone https://github.com/derrtaderr/gtm-agent-evals
 cd gtm-agent-evals
-npm install && npm run build && npm test   # 495 tests
+npm install && npm run build && npm test   # 504 tests
 ```
 
 Evaluate a bad cold email against the bundled outbound config:
@@ -151,15 +151,24 @@ still a BLOCK.
 
 **A streak makes an agent eligible. A person grants.**
 
+```bash
+node dist/cli/index.js status --agents fixtures/ledger/agents.jsonl \
+  --grants fixtures/ledger/grants.jsonl --telemetry fixtures/ledger/events.jsonl \
+  --as-of 2026-09-07T00:00:00.000Z
+```
+
+<!-- verified: status --agents fixtures/ledger/agents.jsonl --grants fixtures/ledger/grants.jsonl --telemetry fixtures/ledger/events.jsonl --as-of 2026-09-07T00:00:00.000Z -->
 ```text
 autonomy ledger — 2026-09-07T00:00:00.000Z
-AGENT               TIER        GRANT    STREAK  LAST   FALSIFIERS
-example-enricher    auto        VALID    3/3 *   PASS   4/4 holding
-example-drafter     supervised  —        0/3     BLOCK  —
-example-researcher  supervised  REVOKED  3/3 *   PASS   3/4 holding
+AGENT               TIER        GRANT    INCIDENT          STREAK  LAST   FALSIFIERS
+example-enricher    auto        VALID    —                 3/3 *   PASS   4/4 holding
+example-drafter     supervised  —        —                 0/3     BLOCK  —
+example-researcher  supervised  REVOKED  advisory REVOKED  3/3 *   PASS   3/4 holding
 
 STREAK is clean runs against the agent's gateN; * marks an agent eligible for a grant.
 Eligibility is not autonomy — a grant is a human decision (see the `grant` command).
+INCIDENT lists grants that are not holding. The effective tier already accounts for them; resolve one with `archive` once it is handled.
+# exit 0
 ```
 
 `grant` refuses twice before it writes anything down: once if the streak is
@@ -184,12 +193,13 @@ node dist/cli/index.js check --agents fixtures/ledger/agents.jsonl \
   --as-of 2026-09-07T00:00:00.000Z
 ```
 
+<!-- verified: check --agents fixtures/ledger/agents.jsonl --grants fixtures/ledger/grants.jsonl --telemetry fixtures/ledger/events.jsonl --as-of 2026-09-07T00:00:00.000Z -->
 ```text
 example-enricher-auto-08bd48bcd395  [auto]  ->  VALID
 example-researcher-advisory-4b51b7ab3e5d  [advisory]  ->  REVOKED
     BROKEN [config_hash_unchanged]: The agent's configuration is still the one this grant was earned on.
       config hash is sha256:REWRITTENv3; the grant was earned on sha256:6b22researcherv2
-summary: 2 grant(s) — 1 VALID, 0 SUSPECT, 1 REVOKED
+summary: 2 unarchived grant(s) — 1 VALID, 0 SUSPECT, 1 REVOKED
 # exit 5
 ```
 
@@ -309,7 +319,7 @@ checks and printed green is worse than no gate.
 
 ## Receipts
 
-495 tests, all deterministic and keyless. The eval and regression halves were
+504 tests, all deterministic and keyless. The eval and regression halves were
 adversarially reviewed before merge, and that review trail is the development
 story: independent reviewers found a research rule that green-lit fabricated
 funding numbers, a regression classifier blind to a vanished dimension, a
@@ -317,13 +327,18 @@ telemetry reader that swallowed malformed records and string-sorted timestamps,
 an unescaped field in the dashboard, and a CLI that passed on a typo'd flag.
 Each got a failing test before its fix, and the tests stay.
 
-The autonomy ledger is newer, with 202 tests of its own written before the code
+The autonomy ledger is newer, with 211 tests of its own written before the code
 they cover. Its first independent review returned BLOCK, and the fixes are in:
 a grant surface that claimed a config lineage the platform cannot establish, an
 alarm that could never be cleared after a handled incident, and a status table
 that read clean green while an agent was mid-demotion. The limitations that
 review surfaced and did *not* close are written down above rather than left in
 a commit message.
+
+Every `text` block in this README preceded by a `<!-- verified: ... -->` comment
+is run through the real CLI by `src/cli/readme-examples.test.ts` and compared
+byte for byte, exit code included. The promise that examples match real output
+is a test, not an intention.
 
 MIT. `SPEC.md` holds the architecture; each module carries a `WIRING.md` with
 its exact surface.

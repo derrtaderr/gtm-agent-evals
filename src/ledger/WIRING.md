@@ -147,9 +147,16 @@ fixtures/ledger/           a synthetic three-agent fleet, calibrated to
                            --as-of 2026-09-07T00:00:00.000Z
 ```
 
-202 tests, deterministic and keyless. `src/cli/ledger-fixtures.test.ts` runs the
-bundled walkthrough and asserts its output, so the README's "every example
-matches real output" promise is enforced rather than hoped for.
+211 tests, deterministic and keyless. Two of them guard the docs:
+
+- `src/cli/ledger-fixtures.test.ts` runs the bundled walkthrough and asserts its
+  output against expectations held in the test.
+- `src/cli/readme-examples.test.ts` runs every README block marked
+  `<!-- verified: <argv> -->` through the real CLI and compares it byte for
+  byte, exit code included. The fixture test alone did NOT catch README drift —
+  it never opens README.md — which is how the INCIDENT column and the
+  "unarchived" summary shipped with two stale example blocks. Adding a verified
+  example is one comment line above the fence.
 
 ## Known limitations (see SPEC.md and the README for the full statement)
 
