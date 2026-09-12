@@ -244,10 +244,25 @@ export function cmdGrant(options: Options, io: CliIo): number {
     `  agent at grant time: config ${grant.evidence.configHash}, model ${grant.evidence.modelId} ` +
       `(the baseline the falsifiers compare against)`,
   );
-  io.out(
-    `  note: run-era config lineage is not tracked yet, so those runs are not proven to have ` +
-      `been produced by that config. See "What the ledger does not know yet" in the README.`,
-  );
+  // Say which KIND of evidence this grant rests on. Session 1 printed a standing
+  // caveat that no run's lineage could be established; that is now false for an
+  // attributed run and still true for an unattributed one, so the line has to
+  // report which of the two this actually is.
+  const verified = grant.evidence.verifiedRuns ?? 0;
+  const unverified = grant.evidence.unverifiedRuns ?? 0;
+  if (unverified === 0) {
+    io.out(
+      `  lineage: all ${verified} run(s) carry this config hash, so they are PROVEN to have been ` +
+        `produced by the configuration above.`,
+    );
+  } else {
+    io.out(
+      `  lineage: ${verified} run(s) proven by config hash, ${unverified} UNVERIFIED — those ` +
+        `carry no hash, so they are placed by the clock (recorded after ${agent.configSince}) ` +
+        `rather than proven. Run this agent's evals with --agent ${agent.id} to make future ` +
+        `evidence provable.`,
+    );
+  }
   io.out(`  falsifiers: ${grant.falsifiers.join(", ")}`);
   io.out(`  this grant holds only while those stay true — re-check with \`check\`.`);
   return EXIT.PASS;
