@@ -9,7 +9,8 @@
 
 import { createHash } from "node:crypto";
 import { readJsonlStrict, writeJsonlAtomic } from "./agents.js";
-import { agentEvents, agentStreak } from "./evidence.js";
+import { agentEvents } from "./evidence.js";
+import { eligibilityEvidence } from "./era.js";
 import { DEFAULT_FALSIFIER_REGISTRY } from "./falsifiers.js";
 import { isTier, SUPERVISED } from "./tiers.js";
 import { clearedForAutonomy } from "../runlog/index.js";
@@ -62,15 +63,18 @@ export type CreateGrantOptions = {
   onWarn?: (message: string) => void;
 };
 
-/** The runs a grant rests on that were recorded BEFORE the agent's current
+/** The runs in a given set that were recorded BEFORE the agent's current
  *  registration — that is, before the config now on file existed.
  *
- *  This is the honest half of a known hole (README, "What the ledger does not
- *  know yet"). A TelemetryEvent carries no config hash, so the platform cannot
- *  say which configuration produced a given run. What it CAN say, with data
- *  already in the store, is that a run predates the current registration, which
- *  makes it prior-era evidence by definition: whatever produced it, it was not
- *  the config on file now. */
+ *  History note: in session 1 this was the whole mitigation for the
+ *  config-lineage hole. A TelemetryEvent carried no config hash, so the platform
+ *  could not say which configuration produced a run; what it COULD say was that
+ *  a run predated the current registration. That inference now lives in
+ *  `era.ts`, where it EXCLUDES such runs from eligibility instead of merely
+ *  warning about them, and a run may additionally carry `agentConfigHash`, which
+ *  settles its lineage outright. This function survives as the narrower
+ *  question it always answered — "which of these specific runs predate the
+ *  current config" — and is still the clearest way to ask it. */
 export function priorEraRuns(
   agent: AgentRecord,
   events: TelemetryEvent[],
@@ -92,25 +96,48 @@ export function priorEraRuns(
 /** Build a grant, or refuse with the reason. Every refusal names what would fix
  *  it, because the operator reading it is mid-promotion and the alternative is
  *  guessing. */
-/** Emit the prior-era caveat, if there is one. Called before every refusal path
- *  in createGrant, so the caveat reaches the operator while the decision is
- *  still theirs to make. */
-function warnOnPriorEraEvidence(
+/** Name the runs that were EXCLUDED from eligibility. Called before every
+ *  refusal path in createGrant, so the caveat reaches the operator while the
+ *  decision is still theirs to make.
+ *
+ *  In session 1 this warning was the whole mitigation: the runs were counted and
+ *  the operator was asked to confirm anyway. They are now excluded outright, so
+ *  this says what happened rather than asking for a judgment call. */
+function warnOnExcludedEvidence(
   agent: AgentRecord,
-  events: TelemetryEvent[],
-  runIds: string[],
+  own: TelemetryEvent[],
+  excluded: TelemetryEvent[],
   onWarn: ((message: string) => void) | undefined,
 ): void {
-  if (!onWarn) return;
-  const priorEra = priorEraRuns(agent, events, runIds);
-  if (priorEra.length === 0) return;
+  if (!onWarn || excluded.length === 0) return;
   onWarn(
-    `${priorEra.length} of the ${runIds.length} runs this grant rests on were recorded BEFORE ` +
-      `${agent.id}'s current config was registered (${agent.configSince}), so they were not produced by ` +
-      `the configuration now on file (${agent.configHash}): ` +
-      `${priorEra.map((e) => e.runId).join(" ")}. ` +
-      `The platform cannot yet tell which config produced a run — see the config-lineage ` +
-      `limitation in the README. Confirm only if you know those runs still represent this agent.`,
+    `${excluded.length} of the ${own.length} runs on file for ${agent.id} were EXCLUDED from ` +
+      `eligibility: they were recorded BEFORE ${agent.id}'s current config was registered ` +
+      `(${agent.configSince}), or they carry a different config hash, so they were not produced ` +
+      `by the configuration now on file (${agent.configHash}): ` +
+      `${excluded.map((e) => e.runId).join(" ")}. ` +
+      `Evidence earned by a retired version of an agent cannot earn a grant for this one.`,
+  );
+}
+
+/** Name the counted runs whose lineage is INFERRED rather than proven.
+ *
+ *  These runs carry no config hash but land inside the current config's window,
+ *  so the ledger counts them on the registry's word. Excluding them instead
+ *  would zero the streak of every operator with a pre-upgrade telemetry store.
+ *  Counting them silently is the thing this function exists to prevent. */
+function warnOnUnverifiedEvidence(
+  agent: AgentRecord,
+  evidence: { streak: number; unverified: number; runIds: string[] },
+  onWarn: ((message: string) => void) | undefined,
+): void {
+  if (!onWarn || evidence.unverified === 0) return;
+  onWarn(
+    `${evidence.unverified} of the ${evidence.streak} runs this grant rests on carry no config ` +
+      `hash, so their lineage is INFERRED from the clock rather than proven: they were recorded ` +
+      `after ${agent.configSince}, when ${agent.configHash} was already the config on file. ` +
+      `They are counted as unverified evidence. Run this agent's evals with ` +
+      `--agents <agents.jsonl> --agent ${agent.id} to make future evidence provable.`,
   );
 }
 
@@ -132,10 +159,16 @@ export function createGrant(
   // tool answers; if the caveat only printed on the success path, the phrase
   // would have been typed uninformed, and a refused or dry attempt — exactly the
   // attempt somebody makes while deciding — would print nothing at all.
-  const streak = agentStreak(events, agent);
+  // Eligibility is CONFIG-SCOPED (session 2). The streak counted here is the
+  // clean tail produced by the configuration currently on file — not the
+  // agent's all-era streak, which is a true number answering a different
+  // question and is what the session-1 hole rested on.
   const own = agentEvents(events, agent);
-  const runIds = own.slice(own.length - streak).map((e) => e.runId);
-  warnOnPriorEraEvidence(agent, events, runIds, options.onWarn);
+  const evidence = eligibilityEvidence(events, agent);
+  const streak = evidence.streak;
+  const runIds = evidence.runIds;
+  warnOnExcludedEvidence(agent, own, evidence.excluded, options.onWarn);
+  warnOnUnverifiedEvidence(agent, evidence, options.onWarn);
 
   if (typeof grantedBy !== "string" || grantedBy.length === 0) {
     throw new GrantRefused("grant: --granted-by is required; a grant with no human on it is not a grant.");
@@ -154,9 +187,21 @@ export function createGrant(
       agent.configIds.length === 0
         ? ` The agent has no eval configs associated, so no run can be attributed to it.`
         : "";
+    // When runs exist but none of them count, the operator's problem is the
+    // rotation, not the agent's behavior. Saying only "streak of 0" would send
+    // them to look at an agent that has been passing all week.
+    const excluded =
+      evidence.excluded.length > 0
+        ? ` ${evidence.excluded.length} run(s) on file were excluded as prior-era evidence ` +
+          `(${evidence.excluded.map((e) => e.runId).join(" ")}), recorded before this config ` +
+          `(${agent.configHash}) was registered on ${agent.configSince} or under a different one. ` +
+          `Re-earn the tier with runs from the current configuration.`
+        : "";
     throw new InsufficientEvidence(
-      `grant: ${agent.id} has a clean-run streak of ${streak}, short of its gateN of ` +
-        `${agent.gateN}.${why} The streak is what makes an agent eligible; it is not granted around.`,
+      `grant: ${agent.id} has a current-era clean-run streak of ${streak}, short of its gateN of ` +
+        `${agent.gateN}.${why}${excluded} Eligibility counts only runs produced by the ` +
+        `configuration now on file; the streak is what makes an agent eligible, and it is not ` +
+        `granted around.`,
     );
   }
 
@@ -174,6 +219,8 @@ export function createGrant(
       streak,
       gateN: agent.gateN,
       runIds,
+      verifiedRuns: evidence.verified,
+      unverifiedRuns: evidence.unverified,
     },
     falsifiers: (input.registry ?? DEFAULT_FALSIFIER_REGISTRY).falsifiers.map((f) => f.id),
   };

@@ -14,6 +14,7 @@ import {
   archiveConfirmationPhrase,
 } from "./grants.js";
 import { registerAgent } from "./agents.js";
+import { InsufficientEvidence } from "./errors.js";
 import { DEFAULT_FALSIFIER_REGISTRY } from "./falsifiers.js";
 import type { TelemetryEvent, VerdictStatus } from "../types.js";
 
@@ -167,9 +168,16 @@ describe("prior-era evidence (the known config-lineage hole)", () => {
     expect(found.map((e) => e.runId)).toEqual(["run-3"]);
   });
 
-  it("WARNS at grant time when the streak rests on runs from before the current config", () => {
+  // SESSION 2 REWRITE. This asserted that the grant was CREATED after the
+  // warning — session 1's mitigation policy, where prior-era runs counted and
+  // the operator was asked to confirm anyway. Eligibility is now config-scoped,
+  // so the same evidence refuses. The warning assertions are unchanged: it
+  // still fires, and it still names the offending runs, before the refusal.
+  it("names the prior-era runs and then REFUSES, rather than counting them", () => {
     const warnings: string[] = [];
-    createGrant(grantArgs({ agent: rotated }), { ...at, onWarn: (w) => warnings.push(w) });
+    expect(() =>
+      createGrant(grantArgs({ agent: rotated }), { ...at, onWarn: (w) => warnings.push(w) }),
+    ).toThrow(InsufficientEvidence);
     expect(warnings.join("\n")).toMatch(/2 of the 3 runs/);
     expect(warnings.join("\n")).toMatch(/run-2 run-3/);
   });
@@ -206,18 +214,33 @@ describe("prior-era evidence (the known config-lineage hole)", () => {
         onWarn: (w) => warnings.push(w),
       }),
     ).toThrow(/granted-by/i);
-    expect(warnings).toHaveLength(1);
+    // Session 2: the rotated agent now draws TWO caveats, not one — its two
+    // pre-config runs are excluded, and the single in-window run that remains
+    // carries no config hash, so it is counted but unverified. Both still reach
+    // the operator before the refusal, which is what this test is about.
+    expect(warnings).toHaveLength(2);
   });
 
-  it("still grants after warning — this is an informed confirmation, not a second gate", () => {
-    const g = createGrant(grantArgs({ agent: rotated }), { ...at, onWarn: () => {} });
-    expect(g.tier).toBe("auto");
+  // SESSION 2 REWRITE. This test was named "still grants after warning — this is
+  // an informed confirmation, not a second gate", and asserted that a rotated
+  // agent's grant was created anyway. That IS the session-1 policy this session
+  // retires: prior-era evidence no longer earns a grant, however informed the
+  // confirmation.
+  it("REFUSES on prior-era evidence — an informed confirmation no longer buys a grant", () => {
+    expect(() =>
+      createGrant(grantArgs({ agent: rotated }), { ...at, onWarn: () => {} }),
+    ).toThrow(InsufficientEvidence);
   });
 
-  it("stays silent on a first grant, when no rotation has happened", () => {
+  // SESSION 2 REWRITE. This asserted total silence on a first grant. The
+  // prior-era caveat is still silent there, and that is still the point — but
+  // these fixture runs carry no config hash, and session 2 never counts an
+  // unattributed run silently, so the unverified caveat now fires.
+  it("raises no PRIOR-ERA caveat on a first grant, when no rotation has happened", () => {
     const warnings: string[] = [];
     createGrant(grantArgs(), { ...at, onWarn: (w) => warnings.push(w) });
-    expect(warnings).toEqual([]);
+    expect(warnings.join("\n")).not.toMatch(/EXCLUDED|BEFORE/);
+    expect(warnings.join("\n")).toMatch(/carry no config hash/);
   });
 });
 

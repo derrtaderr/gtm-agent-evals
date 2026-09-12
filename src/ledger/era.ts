@@ -49,6 +49,16 @@ export function runEra(event: TelemetryEvent, agent: AgentRecord): RunEra {
   if (event.agentConfigHash !== undefined) {
     return event.agentConfigHash === agent.configHash ? "current" : "prior";
   }
+  // An agent that has never rotated has exactly ONE configuration era in its
+  // life, so an unattributed run belongs to it whatever the clock says. Without
+  // this, a first registration excludes its own evidence: an agent's runs
+  // almost always predate the day somebody got around to registering it, so
+  // every first grant would be refused on a streak the operator can see
+  // passing. Session 1's `priorEraRuns` carries the same guard for the same
+  // reason. The rotation exploit still closes, because rotating moves
+  // `configSince` off `registeredAt` and past every run already on disk.
+  if (agent.configSince === agent.registeredAt) return "unknown-in-window";
+
   // Rule 2: place it with the only lineage signal the registry carries.
   const boundary = Date.parse(agent.configSince);
   if (Number.isNaN(boundary)) return "unknown-in-window";
