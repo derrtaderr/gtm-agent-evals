@@ -45,7 +45,16 @@ export type {
   ArchiveGrantInput,
   ArchiveGrantOptions,
 } from "./grants.js";
-export { GrantRefused, InsufficientEvidence } from "./errors.js";
+export { GrantRefused, InsufficientEvidence, ReviewRefused } from "./errors.js";
+export {
+  recordReview,
+  reviewId,
+  saveReview,
+  loadReviews,
+  reviewsForAgent,
+  latestReview,
+} from "./reviews.js";
+export type { RecordReviewInput, RecordReviewOptions } from "./reviews.js";
 export { checkGrant, checkGrants, worstStatus } from "./check.js";
 export type { CheckDeps } from "./check.js";
 export { buildLedger, ledgerEntry } from "./status.js";

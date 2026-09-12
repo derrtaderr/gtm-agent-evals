@@ -303,6 +303,33 @@ export type GrantCheck = {
   archivedBy?: string;
 };
 
+/** A reviewer's call on an agent. BLESS: looked, still comfortable. BLOCK: this
+ *  agent should not be running unattended. There is no "maybe" on purpose — a
+ *  review that does not commit cannot move a grant, and a falsifier needs a
+ *  fact. */
+export type ReviewVerdict = "BLESS" | "BLOCK";
+
+/** One independent review of one agent, as data.
+ *
+ *  The independence rule (a reviewer may be neither the agent itself nor the
+ *  human who granted its autonomy) is enforced when this is RECORDED, not when
+ *  it is read. A reviews file should never hold a review that cannot be
+ *  trusted, so a reader does not have to know the rule to read the file safely. */
+export type ReviewRecord = {
+  id: string;
+  /** The agent under review. */
+  agentId: string;
+  /** Who reviewed. Never the agent, never the grant's `grantedBy`. */
+  reviewerId: string;
+  verdict: ReviewVerdict;
+  timestamp: string;
+  /** Where the review lives — a URL, a path, a commit. Required: an unsourced
+   *  review is an opinion, and a falsifier that moves a grant on an opinion is
+   *  the thing this platform exists to prevent. */
+  evidence: string;
+  note?: string;
+};
+
 /** One agent's row in the ledger: what it may do unattended right now, and the
  *  whole chain behind that answer. */
 export type AgentLedgerEntry = {

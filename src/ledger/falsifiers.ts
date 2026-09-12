@@ -25,6 +25,7 @@ import type {
   FalsifierResult,
   FalsifierSpec,
   FalsifierStatus,
+  ReviewRecord,
   TelemetryEvent,
 } from "../types.js";
 
@@ -37,6 +38,11 @@ export type FalsifierContext = {
   grant: AutonomyGrant;
   agent?: AgentRecord;
   events?: TelemetryEvent[];
+  /** The review log. `undefined` means no reviews source was configured, which
+   *  is distinct from "a source was read and holds no reviews" for exactly the
+   *  same reason `events` makes that distinction: the first is a check that
+   *  could not run, the second is a fact. */
+  reviews?: ReviewRecord[];
   /** Evaluate as of this instant (ISO 8601), so runs are reproducible. */
   asOf: string;
 };
@@ -177,6 +183,70 @@ export const CHECKS: Record<string, FalsifierCheck> = {
     return {
       status: "HOLDS",
       evidence: `grant is ${sinceGrant.toFixed(1)} days old; the ${window}-day window has not elapsed`,
+    };
+  },
+
+  /** Attention: has somebody INDEPENDENT examined this agent since the grant,
+   *  recently enough to still mean something?
+   *
+   *  The only falsifier here whose evidence is a person rather than a machine.
+   *  The other four can all hold while an agent drifts somewhere none of them
+   *  look. A BLOCK review BREAKS the grant outright — a human saying "this
+   *  should not be running unattended" is the strongest evidence the ledger can
+   *  hold, and a later BLESS from somebody else does not age it out. Clearing a
+   *  BLOCK is a human act: archive the grant, then re-grant it. */
+  review_freshness: (spec, ctx) => {
+    const blocked = unevaluableIdentity(ctx);
+    if (blocked) return blocked;
+    if (ctx.reviews === undefined) {
+      return {
+        status: "UNEVALUABLE",
+        evidence:
+          "no reviews source was supplied, so no independent review could be read — " +
+          "this is not the same as nobody having reviewed",
+      };
+    }
+    const window = numberParam(spec, "maxReviewAgeDays", 30);
+    const since = Date.parse(ctx.grant.grantedAt);
+    // Reviews of THIS grant's era only. A blessing recorded before the grant
+    // examined a different decision and cannot vouch for this one.
+    const own = ctx.reviews
+      .filter((r) => r.agentId === ctx.grant.agentId && Date.parse(r.timestamp) >= since)
+      .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+
+    const blocking = own.find((r) => r.verdict === "BLOCK");
+    if (blocking) {
+      return {
+        status: "BROKEN",
+        evidence:
+          `${blocking.reviewerId} recorded a BLOCK review on ${blocking.timestamp} ` +
+          `(${blocking.evidence})${blocking.note ? `: ${blocking.note}` : ""}`,
+      };
+    }
+
+    const newest = own[own.length - 1];
+    if (!newest) {
+      return {
+        status: "DEGRADED",
+        evidence:
+          `no independent review recorded since the grant on ${ctx.grant.grantedAt}; ` +
+          `this grant rests on machine evidence alone`,
+      };
+    }
+    const age = daysBetween(newest.timestamp, ctx.asOf);
+    if (age > window) {
+      return {
+        status: "DEGRADED",
+        evidence:
+          `newest review (${newest.reviewerId}, ${newest.evidence}) is ${age.toFixed(1)} days ` +
+          `old, past the ${window}-day window`,
+      };
+    }
+    return {
+      status: "HOLDS",
+      evidence:
+        `${newest.reviewerId} blessed this agent ${age.toFixed(1)} days ago ` +
+        `(${newest.evidence}), inside the ${window}-day window`,
     };
   },
 };

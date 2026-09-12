@@ -24,6 +24,9 @@ import {
   checkGrants,
   grantsForAgent,
   archiveGrant,
+  recordReview,
+  saveReview,
+  loadReviews,
   DEFAULT_FALSIFIER_REGISTRY,
   loadFalsifierRegistry,
   renderLedgerTable,
@@ -33,7 +36,13 @@ import {
   TIERS,
 } from "../ledger/index.js";
 import { readEvents } from "../telemetry/jsonl.js";
-import type { FalsifierRegistry, Ledger, TelemetryEvent } from "../types.js";
+import type {
+  FalsifierRegistry,
+  Ledger,
+  ReviewRecord,
+  ReviewVerdict,
+  TelemetryEvent,
+} from "../types.js";
 import { EXIT, UsageError, InputError } from "./exit.js";
 import { InsufficientEvidence } from "../ledger/errors.js";
 import { readJsonFile } from "./load.js";
@@ -54,8 +63,9 @@ export const LEDGER_OPTIONS: Record<string, readonly string[]> = {
     "note", "falsifiers", "as-of",
   ],
   archive: ["grants", "grant", "confirm", "archived-by", "as-of"],
-  check: ["agents", "grants", "telemetry", "falsifiers", "as-of", "out"],
-  status: ["agents", "grants", "telemetry", "falsifiers", "agent", "as-of", "out"],
+  review: ["reviews", "grants", "agent", "reviewer", "verdict", "evidence", "note", "as-of"],
+  check: ["agents", "grants", "telemetry", "reviews", "falsifiers", "as-of", "out"],
+  status: ["agents", "grants", "telemetry", "reviews", "falsifiers", "agent", "as-of", "out"],
 };
 
 // Strict ISO-8601 with an explicit timezone, the same bar telemetry holds its
@@ -94,6 +104,13 @@ function asOf(options: Options): string {
 function readTelemetry(options: Options): TelemetryEvent[] | undefined {
   const path = optional(options, "telemetry");
   return path === undefined ? undefined : readEvents(path);
+}
+
+/** undefined when no --reviews flag was given, which `review_not_stale` treats
+ *  as "no reviews source configured" and never as "nobody has reviewed". */
+function readReviews(options: Options): ReviewRecord[] | undefined {
+  const path = optional(options, "reviews");
+  return path === undefined ? undefined : loadReviews(path);
 }
 
 function readRegistry(options: Options): FalsifierRegistry {
@@ -268,12 +285,48 @@ export function cmdArchive(options: Options, io: CliIo): number {
   return EXIT.PASS;
 }
 
+/** Record one independent review.
+ *
+ *  `--grants` is accepted so the independence rule can be enforced against the
+ *  real grant store rather than on trust. It is optional only because a review
+ *  may be recorded before any grant exists; when grants are on file, passing
+ *  them is what makes the refusal possible. */
+export function cmdReview(options: Options, io: CliIo): number {
+  const reviewsPath = required(options, "reviews", "review");
+  const grantsPath = optional(options, "grants");
+  const grants = grantsPath ? loadGrants(grantsPath) : undefined;
+
+  const review = recordReview(
+    {
+      agentId: required(options, "agent", "review"),
+      reviewerId: optional(options, "reviewer") ?? "",
+      verdict: (optional(options, "verdict") ?? "") as ReviewVerdict,
+      evidence: optional(options, "evidence") ?? "",
+      ...(optional(options, "note") ? { note: optional(options, "note") } : {}),
+    },
+    { timestamp: asOf(options), ...(grants ? { grants } : {}) },
+  );
+  saveReview(review, reviewsPath);
+
+  io.out(`recorded ${review.verdict} review of ${review.agentId} by ${review.reviewerId}`);
+  io.out(`  review ${review.id} at ${review.timestamp}`);
+  io.out(`  evidence: ${review.evidence}`);
+  if (review.note) io.out(`  note: ${review.note}`);
+  io.out(
+    review.verdict === "BLOCK"
+      ? `  a BLOCK review BREAKS any grant carrying \`review_not_stale\` — run \`check\`.`
+      : `  grants carrying \`review_not_stale\` count this as a fresh review — run \`check\`.`,
+  );
+  return EXIT.PASS;
+}
+
 export function cmdCheck(options: Options, io: CliIo): number {
   const agents = loadAgents(required(options, "agents", "check"));
   const grants = loadGrants(required(options, "grants", "check"));
   const deps = {
     agents,
     events: readTelemetry(options),
+    reviews: readReviews(options),
     registry: readRegistry(options),
     asOf: asOf(options),
   };
@@ -295,6 +348,7 @@ export function cmdStatus(options: Options, io: CliIo): number {
   const grants = loadGrants(required(options, "grants", "status"));
   const deps = {
     events: readTelemetry(options),
+    reviews: readReviews(options),
     registry: readRegistry(options),
     asOf: asOf(options),
   };
