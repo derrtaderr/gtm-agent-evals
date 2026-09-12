@@ -152,6 +152,17 @@ export type TelemetryEvent = {
   archetype: string;
   verdict: Verdict;
   durationMs?: number;
+  /** Which agent produced this run. Optional so every event written before the
+   *  ledger existed stays readable; an event without it is UNATTRIBUTED, which
+   *  the ledger treats as evidence of unknown era rather than as evidence of
+   *  nothing. See `src/ledger/era.ts`. */
+  agentId?: string;
+  /** The agent's config hash AT RUN TIME — the field that makes a run's lineage
+   *  provable instead of inferred. This is what scopes an eligibility streak to
+   *  the configuration currently on file, closing the session-1 hole where a
+   *  rotated agent could be re-granted on its predecessor's streak. Optional for
+   *  the same backward-compatibility reason as `agentId`. */
+  agentConfigHash?: string;
 };
 
 export type TelemetrySink = (event: TelemetryEvent) => Promise<void> | void;

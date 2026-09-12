@@ -15,6 +15,13 @@ export {
 export type { RegisterAgentInput, RegisterAgentOptions } from "./agents.js";
 export { agentEvents, agentStreak, lastEvent } from "./evidence.js";
 export {
+  runEra,
+  countsTowardEligibility,
+  currentEraStreak,
+  eligibilityEvidence,
+} from "./era.js";
+export type { RunEra, StreakBoundary, EligibilityEvidence } from "./era.js";
+export {
   CHECKS,
   DEFAULT_FALSIFIER_REGISTRY,
   loadFalsifierRegistry,
