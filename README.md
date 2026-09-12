@@ -1,15 +1,30 @@
 # gtm-agent-evals
 
-Eval and regression platform for GTM agents. It answers the question every
-agent stack skips: **has this agent earned autonomy, and is it still earning
-it?**
+**The layer that answers "has this agent earned autonomy" — and keeps checking.**
 
-Deterministic rules, an LLM rubric that fails closed, an autonomy gate that
-counts clean runs, golden-trajectory regression, telemetry, a CI gate, a
-self-contained dashboard, and a per-agent autonomy ledger where a grant carries
-the facts that must stay true for it to keep holding. Zero runtime dependencies
-beyond the Anthropic SDK, and the deterministic layers run without any API key
-at all.
+Shipping an agent is easy now. Deciding it may run without a person reading its
+output is the hard part, and almost nothing in the stack helps you make that
+call or take it back. Evals judge a run. This judges an **agent**: what it is
+allowed to do unattended right now, on what evidence, and what would have to
+become true for that permission to expire.
+
+Four layers, one suite:
+
+| | Answers |
+|---|---|
+| **Evals** | Did this run clear the bar? Deterministic rules plus an LLM rubric that fails closed. |
+| **Regression** | Did the agent get worse? Golden trajectories, replayed and diffed. |
+| **Telemetry** | What has it actually been doing? Every verdict, appended, queryable, on a dashboard. |
+| **The autonomy ledger** | May it run unattended — *still*? A human's grant, the evidence under it, and the falsifiers that expire it. |
+
+The first three produce evidence. The fourth is where a person decides, and
+where the decision gets taken away again when the evidence stops holding. It is
+**not a fifth gate** — the gates judge runs, and adding another would just be a
+louder counter. Autonomy that expires unless re-earned is the move; a permanent
+green checkmark is the failure mode this exists to prevent.
+
+Zero runtime dependencies beyond the Anthropic SDK. Every deterministic layer,
+and the entire ledger, runs with no API key at all.
 
 ## The problem
 
@@ -29,7 +44,7 @@ agent the way tests gate a deploy, and keeps a record.
 ```bash
 git clone https://github.com/derrtaderr/gtm-agent-evals
 cd gtm-agent-evals
-npm install && npm run build && npm test   # 504 tests
+npm install && npm run build && npm test   # 614 tests
 ```
 
 Evaluate a bad cold email against the bundled outbound config:
@@ -207,11 +222,11 @@ summary: 2 unarchived grant(s) — 1 VALID, 0 SUSPECT, 1 REVOKED
 Somebody rewrote that agent's prompt. The clean runs it was granted on were
 produced by different software, so the grant no longer describes it, and the
 agent drops back to `supervised`. Re-granting requires a human to run `grant`
-again — though see the config-lineage limitation below for what that re-grant
-can and cannot currently rest on. Every non-VALID verdict prints the
-falsifier's statement and the evidence line that moved it, because you should
-be able to *disagree* with a revocation by reading two lines rather than by
-re-deriving the check.
+again, and — since the rewrite reset the agent's eligibility along with its
+grant — it requires clean runs from the *new* config first. Every non-VALID
+verdict prints the falsifier's statement and the evidence line that moved it,
+because you should be able to *disagree* with a revocation by reading two lines
+rather than by re-deriving the check.
 
 Falsifiers are data, in `examples/falsifiers.json`. Retuning the freshness
 window is an edit to that file. A registry naming a check that does not exist is
@@ -237,32 +252,125 @@ after a handled incident without anybody editing a JSONL file by hand.
 `status` reports and never gates; its `INCIDENT` column names every grant that
 is not holding, so the glance view never reads clean while an agent is demoted.
 
-## What the ledger does not know yet
+### A grant can also expire because nobody looked
 
-Stated here rather than in a commit message, because these are the edges where
-the tool will surprise you.
+The four default falsifiers all read machines: a config hash, a model id, a
+verdict stream, a clock. Every one of them can hold perfectly while an agent
+drifts somewhere none of them are looking. `review_not_stale` makes a person's
+attention a fact the grant can lose.
 
-**Run-era config lineage is not tracked.** This is the big one. A
-`TelemetryEvent` records which eval config produced a verdict, but not which
-*version* of the agent produced it — there is no config hash on a run. So the
-clean-run streak has no config scope, and one consequence is sharp:
+```bash
+node dist/cli/index.js review --reviews reviews.jsonl --grants grants.jsonl \
+  --agent example-enricher --reviewer priya --verdict BLESS \
+  --evidence https://example.invalid/reviews/17
+```
 
-> Rotate an agent's config and its grant is correctly REVOKED. Run `grant`
-> again immediately, with zero runs under the new config, and it **succeeds** —
-> because the streak it reads was earned by the previous version of the agent.
+A **BLOCK** review BREAKS the grant, which worst-wins carries through to
+REVOKED — a human saying "this should not be running unattended" is the
+strongest evidence the ledger can hold, and a later BLESS from somebody else
+does not age it out. No review since the grant, or one that has aged past the
+window, is DEGRADED, so the grant goes SUSPECT.
 
-Two things blunt it today, and neither closes it. `grant` **warns loudly**,
-naming the offending runs, when the streak rests on runs recorded before the
-current config was registered; the confirmation you type is informed. And no
-surface claims those runs came from the current config — the grant output
-reports the observed runs and the agent's identity at grant time as two
-separate facts, because fusing them would assert a lineage this tool cannot
-establish.
+**Independence is enforced when the review is written**, not when it is read. A
+reviewer may be neither the agent itself nor the human who granted its tier:
 
-The fix is a config hash on `TelemetryEvent` plus an eval run knowing which
-agent it belongs to, so eligibility can be scoped to runs produced by the
-current configuration. That is a cross-cutting change to the eval half of the
-platform and is scoped for the next session, not patched around here.
+```text
+error: review: dana granted example-enricher its auto tier (grant example-enricher-auto-08bd48bcd395),
+so they are not an independent reviewer of it. Review by somebody who did not make the decision
+being re-examined.
+# exit 1
+```
+
+Refusing at the door means the reviews file only ever holds reviews a reader can
+trust without knowing this rule exists.
+
+It ships **opt-in**, in `examples/falsifiers-with-review.json` rather than in the
+default registry. Making it a fifth default would turn every grant already on
+disk SUSPECT the moment you upgraded, for want of a reviews file you had not
+written yet — which is precisely the alarm-fatigue failure `archive` exists to
+prevent. Review cadence is your policy, so it is your data.
+
+The pattern is an adversarial-review CONTRACT treated as a *scheduled input*
+rather than a one-time blessing. This repo is self-contained; it implements the
+idea, it does not depend on anything that pioneered it.
+
+### The fleet on one page
+
+`check --out` and `status --out` write the ledger as JSON, and the dashboard
+renders it beside the run telemetry — per-agent tier, grant status, incident
+flags, falsifier health, and review recency:
+
+```bash
+node dist/cli/index.js check --agents agents.jsonl --grants grants.jsonl \
+  --telemetry events.jsonl --out ledger.json
+node dist/dashboard/cli.js events.jsonl dashboard.html --ledger ledger.json
+```
+
+Still one self-contained file, still no server, and every ledger-origin string
+— agent names and reviewer ids included — HTML-escaped on the way in.
+
+## Eligibility is scoped to the configuration that earned it
+
+An earlier version of this README documented a hole here, and this section is
+what replaced it. The hole was worth stating plainly, so the fix is too.
+
+**What was wrong.** A `TelemetryEvent` recorded which eval config produced a
+verdict, but not which *version* of the agent produced it. The clean-run streak
+therefore had no config scope, and the consequence was sharp: rotate an agent's
+config, watch its grant be correctly REVOKED, then run `grant` again
+immediately with zero runs under the new config — and it **succeeded**, resting
+entirely on a streak earned by the previous version of the agent. Session 1
+could only warn about it.
+
+**What closed it.** A run now records which agent and which configuration
+produced it, and eligibility counts only runs from the configuration on file:
+
+```bash
+node dist/cli/index.js eval --rules-only --config examples/outbound.config.json \
+  --run fixtures/outbound/passing.json --telemetry events.jsonl \
+  --agents agents.jsonl --agent example-drafter
+```
+
+You name the agent; the **registry supplies the hash**, so a run's attribution
+can never drift from the agent's registration through a typo. Rotating a config
+now empties the eligibility streak, and the re-grant is refused:
+
+```text
+warning: 3 of the 3 runs on file for example-enricher were EXCLUDED from eligibility: ...
+error: grant: example-enricher has a current-era clean-run streak of 0, short of its gateN of 3.
+  3 run(s) on file were excluded as prior-era evidence (run-1 run-2 run-3) ...
+  Re-earn the tier with runs from the current configuration.
+# exit 5
+```
+
+The agent earns the tier back the honest way: run it under the new config until
+the streak is real again, then grant.
+
+**Where a run's era comes from, exactly.** Attribution is proof and the clock is
+a fallback:
+
+| The run | Its era | Counts? |
+|---|---|---|
+| carries the agent's current config hash | current | **yes — verified** |
+| carries a different hash | prior | no |
+| carries no hash, recorded at/after `configSince` | unknown, in window | **yes — counted but UNVERIFIED** |
+| carries no hash, recorded before `configSince` | unknown, pre-config | no |
+
+That third row is the honest residual, and it is the migration path rather than
+a loophole. Events written before this version exists carry no hash, so their
+lineage cannot be *proven*; the ledger places them with the only signal the
+registry has — whether they predate the current config — and then says so out
+loud wherever it counts them, on the grant, in `status --agent`, and on the
+dashboard. **Inference is not proof. Attribution is what makes a run verified,
+and new runs produce it.**
+
+So, precisely: **the rotation exploit is closed** — rotating moves `configSince`
+past every run already on disk, whether or not those runs are attributed. Full
+per-run verification requires attributed telemetry, which every run recorded
+with `--agent` from here on provides. The reason unattributed in-window runs are
+counted at all rather than discarded: discarding them would zero the streak of
+every existing operator the moment they upgrade, so the tool's first act after
+an install would be a false claim about their fleet.
 
 **Concurrent writers can lose a write.** The JSONL stores are read-modify-write
 with an atomic rename. Two processes archiving different grants at the same
@@ -320,7 +428,7 @@ checks and printed green is worse than no gate.
 
 ## Receipts
 
-504 tests, all deterministic and keyless. The eval and regression halves were
+614 tests, all deterministic and keyless. The eval and regression halves were
 adversarially reviewed before merge, and that review trail is the development
 story: independent reviewers found a research rule that green-lit fabricated
 funding numbers, a regression classifier blind to a vanished dimension, a
@@ -328,13 +436,35 @@ telemetry reader that swallowed malformed records and string-sorted timestamps,
 an unescaped field in the dashboard, and a CLI that passed on a typo'd flag.
 Each got a failing test before its fix, and the tests stay.
 
-The autonomy ledger is newer, with 211 tests of its own written before the code
-they cover. Its first independent review returned BLOCK, and the fixes are in:
-a grant surface that claimed a config lineage the platform cannot establish, an
+The autonomy ledger is newer, and its history is the more useful story. Its
+first independent review returned **BLOCK**. Three fixes landed immediately: a
+grant surface that claimed a config lineage the platform could not establish, an
 alarm that could never be cleared after a handled incident, and a status table
-that read clean green while an agent was mid-demotion. The limitations that
-review surfaced and did *not* close are written down above rather than left in
-a commit message.
+that read clean green while an agent was mid-demotion. The fourth finding — that
+eligibility had no config scope, so a rotated agent could be re-granted on its
+predecessor's streak — was too big for that session and was written into this
+README as a known hole, reproduction steps included.
+
+The next session closed it, and closing it meant **deleting three tests that
+asserted the old behavior was correct**, including one that pinned
+`expect(code).toBe(0)` on the re-grant under the comment *"still allowed — this
+is an informed confirmation, not a new gate"*. Those rewrites are marked
+`SESSION 2 REWRITE` in place, each carrying the reason. A test suite that can
+never change is a suite that has stopped describing the product; a suite whose
+assertions get quietly adjusted is worse. The middle path is changing them in
+the open.
+
+## Relationship to `earn-autonomy`
+
+[`earn-autonomy`](https://github.com/derrtaderr/earn-autonomy) is where the
+graduation mechanic in this repo was first worked out: a clean-run streak as the
+thing an agent earns, and a config change as the thing that resets it. This
+platform absorbed that idea and generalized it — the single reset rule became a
+falsifier registry, and the streak became one input to a human's revocable
+grant.
+
+The two overlap, deliberately, and consolidating or renaming them is a decision
+above any one pull request. Nothing here depends on that repo.
 
 Every `text` block in this README preceded by a `<!-- verified: ... -->` comment
 is run through the real CLI by `src/cli/readme-examples.test.ts` and compared
