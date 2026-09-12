@@ -206,8 +206,16 @@ export function renderAgentDetail(
       }
       io.out(
         `      agent at grant time: config ${g.evidence.configHash}, model ${g.evidence.modelId} ` +
-          `(the falsifier baseline; run-era config lineage is not tracked)`,
+          `(the falsifier baseline)`,
       );
+      if (g.evidence.verifiedRuns !== undefined || g.evidence.unverifiedRuns !== undefined) {
+        const verified = g.evidence.verifiedRuns ?? 0;
+        const unverified = g.evidence.unverifiedRuns ?? 0;
+        io.out(
+          `      lineage: ${verified} run(s) proven by config hash` +
+            (unverified > 0 ? `, ${unverified} unverified (placed by the clock)` : ""),
+        );
+      }
       if (g.evidence.note) io.out(`      note: ${g.evidence.note}`);
     }
     io.out("      falsifiers:");

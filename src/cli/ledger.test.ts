@@ -184,7 +184,12 @@ describe("grant", () => {
     expect(text()).toMatch(/agent at grant time:.*config sha256:aaaa1111/);
     expect(text()).toMatch(/evidence:.*3\/3/);
     expect(text()).toMatch(/run-2026-09-10T00:00:00\.000Z/);
-    expect(text()).toMatch(/lineage is not tracked/i);
+    // SESSION 2 REWRITE. This asserted the standing caveat "run-era config
+    // lineage is not tracked", which was true in session 1 and is false now for
+    // an attributed run. The surface reports which KIND of evidence it holds
+    // instead; these fixture events carry no config hash, so they are counted
+    // and labelled UNVERIFIED rather than covered by a blanket disclaimer.
+    expect(text()).toMatch(/lineage:.*UNVERIFIED/);
   });
 
   it("refuses with exit 5 and names the missing source when no --telemetry is given", async () => {

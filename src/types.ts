@@ -203,9 +203,13 @@ export type AgentRecord = {
   registeredAt: string;
   /** When the CURRENT `configHash` was first registered. Equal to
    *  `registeredAt` until a config rotates, after which it moves and
-   *  `registeredAt` does not. The gap between them is the only config-lineage
-   *  signal the platform has, because a TelemetryEvent carries no config hash
-   *  (see "What the ledger does not know yet" in the README). */
+   *  `registeredAt` does not.
+   *
+   *  This is the boundary an UNATTRIBUTED run is placed against: one recorded
+   *  before it provably did not come from the config on file. Session 2 added
+   *  `agentConfigHash` to TelemetryEvent, so an attributed run needs no such
+   *  inference; this remains the fallback for events written before that
+   *  field existed. See `src/ledger/era.ts`. */
   configSince: string;
 };
 
