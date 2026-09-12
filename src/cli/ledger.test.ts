@@ -219,7 +219,16 @@ describe("re-granting after a config rotation (the reviewer's B1 sequence)", () 
     err = [];
   });
 
-  it("warns loudly at grant time that the streak is prior-era evidence", async () => {
+  // SESSION 2 REWRITE — this is the session-1 blocker, reproduced verbatim and
+  // now refused. It previously asserted `expect(code).toBe(0)` under the comment
+  // "still allowed — this is an informed confirmation, not a new gate", and the
+  // README documented the sequence as a known hole. Eligibility is now scoped to
+  // the current configuration, so step 2 exits 5. The warning assertions are
+  // kept: the caveat still fires, and it still names the runs, before the
+  // refusal. The one dropped assertion is
+  // `/cannot yet tell which config produced a run/` — that sentence is no longer
+  // true, which is the entire point of the session.
+  it("REFUSES a post-rotation re-grant, after naming the excluded prior-era runs", async () => {
     // 1. rotate the config — the existing grant is correctly REVOKED
     await register(["--config-hash", "sha256:cccc3333", "--as-of", "2026-09-11T12:00:00.000Z"]);
     out = [];
@@ -227,12 +236,14 @@ describe("re-granting after a config rotation (the reviewer's B1 sequence)", () 
     // 2. re-grant immediately, with zero runs under the new config
     const code = await grantAuto(["--as-of", "2026-09-11T13:00:00.000Z"]);
 
-    expect(code).toBe(0); // still allowed — this is an informed confirmation, not a new gate
+    expect(code).toBe(5); // AUTONOMY — the evidence does not support this grant
     expect(errText()).toMatch(/^warning:/m);
     expect(errText()).toMatch(/3 of the 3 runs/);
     expect(errText()).toMatch(/BEFORE example-enricher's current config was registered/);
     expect(errText()).toMatch(/sha256:cccc3333/);
-    expect(errText()).toMatch(/cannot yet tell which config produced a run/);
+    expect(errText()).toMatch(/current-era clean-run streak of 0/);
+    // And nothing was written down: a refused grant leaves the ledger alone.
+    expect(readFileSync(grants, "utf8").trim().split("\n")).toHaveLength(1);
   });
 
   it("prints the warning and REFUSES when the phrase is wrong — a dry attempt still informs", async () => {
@@ -268,12 +279,15 @@ describe("re-granting after a config rotation (the reviewer's B1 sequence)", () 
       ],
       ordered,
     );
-    expect(code).toBe(0);
-    const warnAt = log.findIndex((l) => l.includes("runs this grant rests on"));
-    const grantAt = log.findIndex((l) => l.startsWith("out: granted auto"));
+    // SESSION 2: the outcome this warning precedes is now a REFUSAL rather than
+    // an announced grant, but the ordering claim is unchanged and is still the
+    // whole point — the operator reads the caveat before they read the verdict.
+    expect(code).toBe(5);
+    const warnAt = log.findIndex((l) => l.includes("were EXCLUDED from"));
+    const outcomeAt = log.findIndex((l) => l.startsWith("err: error:"));
     expect(warnAt).toBeGreaterThanOrEqual(0);
-    expect(grantAt).toBeGreaterThanOrEqual(0);
-    expect(warnAt).toBeLessThan(grantAt);
+    expect(outcomeAt).toBeGreaterThanOrEqual(0);
+    expect(warnAt).toBeLessThan(outcomeAt);
   });
 
   it("stays quiet when the streak really was recorded under the current registration", async () => {

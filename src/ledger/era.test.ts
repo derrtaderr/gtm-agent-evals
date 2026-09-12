@@ -73,6 +73,25 @@ describe("runEra — an unattributed run is placed by the clock, not guessed", (
     // life and every unattributed run falls inside it.
     expect(runEra(ev(2), agent)).toBe("unknown-in-window");
   });
+
+  it("counts a never-rotated agent's runs that PREDATE its registration", () => {
+    // The regression this pins: an agent's runs almost always predate the day
+    // somebody got around to registering it. Excluding them would refuse every
+    // first grant on a streak the operator can watch passing.
+    const lateRegistration = registerAgent(
+      {
+        id: "example-enricher",
+        name: "Example Enricher",
+        configHash: "sha256:current",
+        modelId: "example-model-v1",
+        configIds: ["research-default"],
+        gateN: 3,
+      },
+      { registeredAt: "2026-09-20T00:00:00.000Z" },
+    );
+    expect(runEra(ev(2), lateRegistration)).toBe("unknown-in-window");
+    expect(currentEraStreak([ev(2), ev(3), ev(4)], lateRegistration)).toBe(3);
+  });
 });
 
 describe("countsTowardEligibility", () => {

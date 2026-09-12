@@ -222,6 +222,14 @@ export type GrantEvidence = {
   /** Telemetry runIds that made up the streak — the receipts, so a reader can
    *  go look at the runs rather than trust the number. */
   runIds: string[];
+  /** How many of those runs carried this agent's config hash, making their
+   *  lineage PROVEN. Additive; absent on grants written before session 2. */
+  verifiedRuns?: number;
+  /** How many were counted on the registry's word instead — unattributed runs
+   *  inside the current config's window, whose lineage is inferred from the
+   *  clock. `verifiedRuns + unverifiedRuns === streak`. A grant resting mostly
+   *  on unverified runs is a weaker grant, and saying so is the point. */
+  unverifiedRuns?: number;
   /** Free-text from the granting human (a review link, a rationale). */
   note?: string;
 };
