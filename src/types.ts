@@ -313,9 +313,27 @@ export type AgentLedgerEntry = {
   /** Tiers the agent holds grants for, whatever their current status. */
   grantedTiers: AutonomyTier[];
   checks: GrantCheck[];
+  /** The CONFIG-SCOPED clean-run streak: runs produced by the configuration
+   *  currently on file. This is what `eligible` is computed from and what
+   *  `grant` refuses against, so the row can never promise a grant the grant
+   *  command would refuse. */
   streak: number;
+  /** The all-era clean-run streak, ignoring config lineage. Still the useful
+   *  "how is this agent doing" signal; just not the eligibility question. Equal
+   *  to `streak` until a config rotates. */
+  observedStreak: number;
+  /** Of the runs in `streak`, how many carried this agent's config hash and are
+   *  therefore proven to have come from it. */
+  verifiedRuns: number;
+  /** Of the runs in `streak`, how many were counted on the registry's word —
+   *  unattributed runs inside the current config's window. */
+  unverifiedRuns: number;
+  /** Runs in the agent's evidence that could not count at all, because they
+   *  predate the current config or carry a different hash. */
+  excludedRuns: number;
   gateN: number;
-  /** True once the streak meets gateN — eligible for a grant, never granted. */
+  /** True once the config-scoped streak meets gateN — eligible for a grant,
+   *  never granted. */
   eligible: boolean;
   lastVerdict?: VerdictStatus;
   lastRunAt?: string;

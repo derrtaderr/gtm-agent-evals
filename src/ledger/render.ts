@@ -60,6 +60,24 @@ export function renderLedgerTable(io: LedgerIo, ledger: Ledger): void {
           "them; resolve one with `archive` once it is handled.",
       );
     }
+    // A streak that shrank because of a rotation must say so. "0/3" beside an
+    // agent the operator watched pass all week reads as a broken tool unless
+    // the reason is on the page.
+    const excluded = ledger.agents.reduce((n, a) => n + a.excludedRuns, 0);
+    if (excluded > 0) {
+      io.out(
+        `${excluded} run(s) are EXCLUDED from eligibility: they were produced by a configuration ` +
+          `that is no longer on file, so they cannot earn a grant for the current one.`,
+      );
+    }
+    const unverified = ledger.agents.reduce((n, a) => n + a.unverifiedRuns, 0);
+    if (unverified > 0) {
+      io.out(
+        `${unverified} counted run(s) are UNVERIFIED: they carry no config hash, so their lineage ` +
+          `is inferred from the clock rather than proven — run evals with --agents/--agent to ` +
+          `make it provable.`,
+      );
+    }
   }
 
   if (ledger.orphanGrants.length > 0) {
@@ -144,6 +162,21 @@ export function renderAgentDetail(
     `  clean-run streak: ${entry.streak}/${entry.gateN}` +
       (entry.eligible ? " (eligible for a grant)" : " (not yet eligible)"),
   );
+  // The two numbers are printed separately whenever they disagree, because the
+  // gap between them IS the config rotation, and an operator looking at a
+  // demoted agent needs to see that rather than infer it.
+  if (entry.observedStreak !== entry.streak || entry.excludedRuns > 0) {
+    io.out(
+      `    observed streak across all eras: ${entry.observedStreak} ` +
+        `(${entry.excludedRuns} run(s) excluded as prior-era evidence)`,
+    );
+  }
+  if (entry.unverifiedRuns > 0) {
+    io.out(
+      `    of the ${entry.streak} counted run(s), ${entry.verifiedRuns} verified by config hash ` +
+        `and ${entry.unverifiedRuns} unverified (no hash recorded; lineage inferred from the clock)`,
+    );
+  }
   io.out(
     entry.lastVerdict
       ? `  last run: ${entry.lastVerdict} at ${entry.lastRunAt}`
