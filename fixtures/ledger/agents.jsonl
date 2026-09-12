@@ -1,0 +1,3 @@
+{"id":"example-enricher","name":"Example Enricher","description":"Enriches an inbound account from a CRM record.","configHash":"sha256:1f0aenricherv3","modelId":"example-model-v1","gateN":3,"configIds":["research-default"],"registeredAt":"2026-09-01T00:00:00.000Z"}
+{"id":"example-drafter","name":"Example Drafter","description":"Drafts a first-touch outbound email.","configHash":"sha256:9c41drafterv7","modelId":"example-model-v1","gateN":3,"configIds":["outbound-default"],"registeredAt":"2026-09-01T00:00:00.000Z"}
+{"id":"example-researcher","name":"Example Researcher","description":"Summarizes a company from public filings.","configHash":"sha256:REWRITTENv3","modelId":"example-model-v1","gateN":3,"configIds":["content-default"],"registeredAt":"2026-09-06T18:00:00.000Z"}
