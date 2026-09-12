@@ -329,20 +329,27 @@ surface first.
 `GrantStatus`, `GrantCheck`, `AgentLedgerEntry`. **No existing type is changed or
 removed**, which is what keeps all 293 prior tests green.
 
-## Known limitations (documented, not fixed, in session 1)
+## Known limitations
 
-- **Run-era config lineage is untracked, so eligibility has no config scope.**
-  A `TelemetryEvent` carries no config hash, so the platform cannot say which
-  version of an agent produced a run. Concretely: rotate a config, watch the
-  grant be correctly REVOKED, then re-grant immediately with zero runs under the
-  new config — and it succeeds, resting on the previous version's streak.
-  Mitigated but NOT closed in session 1 by (a) a loud grant-time warning naming
-  the runs that predate the current config's registration, and (b) grant
-  surfaces that never claim the observed runs came from the current config.
-  **Session-2 fix:** add a config hash to `TelemetryEvent` and make an eval run
-  agent-aware, then scope the eligibility streak to runs produced by the current
-  configuration. Cross-cutting into the eval half, which is why it is not
-  patched here.
+- **~~Run-era config lineage is untracked, so eligibility has no config
+  scope.~~ CLOSED in session 2.** Kept here as the history of the fix rather
+  than deleted, because the reproduction is the clearest statement of what the
+  ledger now guarantees. The hole: a `TelemetryEvent` carried no config hash, so
+  the platform could not say which version of an agent produced a run. Rotate a
+  config, watch the grant be correctly REVOKED, then re-grant immediately with
+  zero runs under the new config — and it succeeded, resting on the previous
+  version's streak. Session 1 mitigated it with a loud grant-time warning and
+  with grant surfaces that never claimed run-era lineage; neither closed it.
+  Session 2 added `agentId`/`agentConfigHash` to `TelemetryEvent`, made `eval`
+  and `record` agent-aware, and scoped the eligibility streak to the
+  configuration on file. The sequence above now exits 5.
+  **Residual, named rather than buried:** an unattributed run (one written
+  before this version existed) has no provable era, so it is placed against
+  `configSince` and counted as UNVERIFIED when it falls inside the current
+  config's window — loudly, on every surface that counts it. The rotation
+  exploit is closed regardless, since rotating moves `configSince` past every
+  run already on disk. Full per-run verification requires attributed telemetry,
+  which every `--agent` run produces from here on.
 - **No write lock on the JSONL stores.** Read-modify-write plus an atomic
   rename; concurrent writers can lose a write. Fail-safe in direction — the
   surviving state is the older, more alarming one, never a falsely resolved
@@ -352,18 +359,16 @@ removed**, which is what keeps all 293 prior tests green.
   so a BLOCK from the future still revokes. Deliberate: ignoring a recorded
   failure because of a clock argument is the worse error.
 
-## Session-2 non-goals (named so they are not improvised into session 1)
+## Session-2 scope, as delivered (the list below was session 1's plan)
 
-- Dashboard view of the ledger (session 1 writes the JSON; session 2 renders it).
-- ship-check integration — independent adversarial review as a fifth falsifier
-  (`review_not_stale`), which needs the review artifact to have a shape here.
-- Naming consolidation with `earn-autonomy`; that is a positioning decision.
-- redaction-gate egress wiring as a tier precondition.
-- Per-task-class tiers.
-- A scheduled re-check ledger with carried-forward verdicts and recheck intervals.
-- A manual `revoke` command as such. `archive` covers it: an archived grant
-  confers no tier, so retiring one deliberately is a recorded act rather than a
-  hand edit.
+Delivered in session 2: the eligibility fix, the ledger dashboard view, and
+`review_not_stale`. Still deferred: naming consolidation with `earn-autonomy`
+(a positioning decision above any PR), redaction-gate egress wiring as a tier
+precondition, per-task-class tiers, a scheduled re-check ledger with
+carried-forward verdicts, hosted or multi-tenant anything, and a manual
+`revoke` command — `archive` covers that last one, since an archived grant
+confers no tier, so retiring one deliberately is a recorded act rather than a
+hand edit.
 
 # Lane G session 2 — closing the config-lineage hole (added 2026-09-11)
 
