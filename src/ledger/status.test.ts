@@ -73,6 +73,27 @@ describe("effective tier", () => {
     expect(e.effectiveTier).toBe("supervised");
   });
 
+  it("does NOT count an archived grant as holding, even while every falsifier holds", () => {
+    const retired = {
+      ...grant("auto", "sha256:current"),
+      archivedAt: "2026-09-10T00:00:00.000Z",
+      archivedBy: "operator",
+    };
+    const e = ledgerEntry(agent, [retired], deps());
+    expect(e.checks[0].status).toBe("VALID");
+    expect(e.effectiveTier).toBe("supervised");
+  });
+
+  it("falls back to a still-holding lower grant when the higher one is archived", () => {
+    const retired = {
+      ...grant("auto", "sha256:current", "g-auto"),
+      archivedAt: "2026-09-10T00:00:00.000Z",
+      archivedBy: "operator",
+    };
+    const e = ledgerEntry(agent, [retired, grant("advisory", "sha256:current")], deps());
+    expect(e.effectiveTier).toBe("advisory");
+  });
+
   it("is supervised for an agent with no grants at all", () => {
     expect(ledgerEntry(agent, [], deps()).effectiveTier).toBe("supervised");
   });

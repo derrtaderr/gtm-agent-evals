@@ -98,6 +98,41 @@ describe("renderLedgerTable", () => {
     expect(c.text()).toContain("REVOKED");
   });
 
+  // M2: the glance surface must never read clean green mid-incident.
+  it("marks an agent whose HIGHER grant is revoked behind a still-valid lower one", () => {
+    const grants = [grant("auto", "sha256:stale", "g-auto"), grant("advisory", "sha256:current", "g-adv")];
+    const c = capture();
+    renderLedgerTable(c.io, buildLedger([enricher], grants, deps));
+    // Effective tier is advisory and that grant is VALID — without an incident
+    // marker the row reads as a healthy agent while its auto grant is revoked.
+    expect(c.text()).toMatch(/example-enricher\s+advisory/);
+    expect(c.text()).toContain("auto REVOKED");
+  });
+
+  it("marks a SUSPECT higher grant too, not only a revoked one", () => {
+    const grants = [grant("auto", "sha256:current", "g-auto"), grant("advisory", "sha256:current", "g-adv")];
+    const c = capture();
+    renderLedgerTable(c.io, buildLedger([enricher], grants, { ...deps, events: undefined }));
+    expect(c.text()).toContain("auto SUSPECT");
+  });
+
+  it("leaves the incident column clear when every grant holds", () => {
+    const c = capture();
+    renderLedgerTable(c.io, buildLedger([enricher], [grant("auto", "sha256:current")], deps));
+    expect(c.text()).not.toMatch(/REVOKED|SUSPECT/);
+  });
+
+  it("clears the incident marker once the grant is archived", () => {
+    const retired = {
+      ...grant("auto", "sha256:stale", "g-auto"),
+      archivedAt: "2026-09-10T00:00:00.000Z",
+      archivedBy: "operator",
+    };
+    const c = capture();
+    renderLedgerTable(c.io, buildLedger([enricher], [retired, grant("advisory", "sha256:current", "g-adv")], deps));
+    expect(c.text()).not.toContain("auto REVOKED");
+  });
+
   it("lists orphan grants under their own heading when some exist", () => {
     const ghost = { ...grant("auto", "sha256:current"), agentId: "example-ghost" };
     const c = capture();
@@ -155,6 +190,19 @@ describe("renderCheckReport", () => {
     expect(c.text()).toContain("REVOKED");
   });
 
+  it("annotates an archived grant and leaves it out of the alarm summary", () => {
+    const retired = {
+      ...grant("auto", "sha256:stale", "g-auto"),
+      archivedAt: "2026-09-10T00:00:00.000Z",
+      archivedBy: "operator",
+    };
+    const c = capture();
+    renderCheckReport(c.io, checkGrants([retired], { ...deps, agents: [enricher] }));
+    expect(c.text()).toContain("REVOKED");
+    expect(c.text()).toMatch(/archived 2026-09-10T00:00:00\.000Z by operator/);
+    expect(c.text()).toMatch(/0 unarchived grant\(s\)/);
+  });
+
   it("says so plainly when the ledger holds no grants", () => {
     const c = capture();
     renderCheckReport(c.io, []);
@@ -181,6 +229,17 @@ describe("renderAgentDetail", () => {
     for (const f of DEFAULT_FALSIFIER_REGISTRY.falsifiers) {
       expect(c.text()).toContain(f.id);
     }
+  });
+
+  it("shows who archived a grant and when, in the detail view", () => {
+    const retired = {
+      ...grant("auto", "sha256:current"),
+      archivedAt: "2026-09-10T00:00:00.000Z",
+      archivedBy: "operator",
+    };
+    const c = capture();
+    renderAgentDetail(c.io, ledgerEntry(enricher, [retired], deps), [retired]);
+    expect(c.text()).toMatch(/archived 2026-09-10T00:00:00\.000Z by operator/);
   });
 
   it("says an agent holds no grants rather than printing an empty section", () => {

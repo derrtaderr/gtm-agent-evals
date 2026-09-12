@@ -35,12 +35,13 @@ export function renderLedgerTable(io: LedgerIo, ledger: Ledger): void {
         a.agentId,
         a.effectiveTier,
         top ? top.status : "—",
+        incidentMarker(a),
         `${a.streak}/${a.gateN}${a.eligible ? " *" : ""}`,
         a.lastVerdict ?? "—",
         top ? falsifierSummary(top) : "—",
       ];
     });
-    const header = ["AGENT", "TIER", "GRANT", "STREAK", "LAST", "FALSIFIERS"];
+    const header = ["AGENT", "TIER", "GRANT", "INCIDENT", "STREAK", "LAST", "FALSIFIERS"];
     const widths = header.map((h, i) =>
       Math.max(h.length, ...rows.map((r) => r[i].length)),
     );
@@ -51,6 +52,12 @@ export function renderLedgerTable(io: LedgerIo, ledger: Ledger): void {
     io.out("");
     io.out("STREAK is clean runs against the agent's gateN; * marks an agent eligible for a grant.");
     io.out("Eligibility is not autonomy — a grant is a human decision (see the `grant` command).");
+    if (rows.some((r) => r[3] !== "—")) {
+      io.out(
+        "INCIDENT lists grants that are not holding. The effective tier already accounts for " +
+          "them; resolve one with `archive` once it is handled.",
+      );
+    }
   }
 
   if (ledger.orphanGrants.length > 0) {
@@ -62,6 +69,20 @@ export function renderLedgerTable(io: LedgerIo, ledger: Ledger): void {
       io.out(`  ${c.grantId}  (agent ${c.agentId})  ->  ${c.status}`);
     }
   }
+}
+
+/** Every unarchived grant on this agent that is not holding, named as
+ *  "<tier> <STATUS>".
+ *
+ *  Without this the glance view lies by omission mid-incident: an agent whose
+ *  `auto` grant was revoked but whose `advisory` grant still holds shows tier
+ *  `advisory`, grant `VALID`, and reads as a perfectly healthy row. The
+ *  demotion already happened and nothing on the line says so. Archived grants
+ *  are excluded because they have been explicitly resolved. */
+function incidentMarker(entry: AgentLedgerEntry): string {
+  const broken = entry.checks.filter((c) => c.status !== "VALID" && !c.archived);
+  if (broken.length === 0) return "—";
+  return broken.map((c) => `${c.tier} ${c.status}`).join(", ");
 }
 
 /** The highest-tier check on an agent's row — the one whose status explains the
@@ -80,7 +101,12 @@ export function renderCheckReport(io: LedgerIo, checks: GrantCheck[]): void {
     return;
   }
   for (const c of checks) {
-    io.out(`${c.grantId}  [${c.tier}]  ->  ${c.status}`);
+    io.out(`${c.grantId}  [${c.tier}]  ->  ${c.status}${c.archived ? "  (archived)" : ""}`);
+    if (c.archived && c.archivedAt) {
+      io.out(
+        `    archived ${c.archivedAt} by ${c.archivedBy ?? "unknown"} — resolved, no longer alarming`,
+      );
+    }
     for (const f of c.falsifiers) {
       if (f.status === "HOLDS") continue;
       // The id as well as the statement: the statement is what a reader argues
@@ -89,10 +115,16 @@ export function renderCheckReport(io: LedgerIo, checks: GrantCheck[]): void {
       io.out(`      ${f.evidence}`);
     }
   }
-  const count = (s: GrantCheck["status"]): number => checks.filter((c) => c.status === s).length;
+  // The summary counts UNARCHIVED grants, because that is the set the exit code
+  // is computed from. Counting resolved incidents here would leave an operator
+  // staring at "1 REVOKED" beside a green exit and trusting neither.
+  const live = checks.filter((c) => !c.archived);
+  const count = (s: GrantCheck["status"]): number => live.filter((c) => c.status === s).length;
+  const archived = checks.length - live.length;
   io.out(
-    `summary: ${checks.length} grant(s) — ${count("VALID")} VALID, ` +
-      `${count("SUSPECT")} SUSPECT, ${count("REVOKED")} REVOKED`,
+    `summary: ${live.length} unarchived grant(s) — ${count("VALID")} VALID, ` +
+      `${count("SUSPECT")} SUSPECT, ${count("REVOKED")} REVOKED` +
+      (archived > 0 ? ` (+${archived} archived)` : ""),
   );
 }
 
@@ -127,6 +159,9 @@ export function renderAgentDetail(
     io.out(`    ${c.grantId}  [${c.tier}]  ->  ${c.status}`);
     if (g) {
       io.out(`      granted ${g.grantedAt} by ${g.grantedBy}`);
+      if (g.archivedAt) {
+        io.out(`      archived ${g.archivedAt} by ${g.archivedBy ?? "unknown"}`);
+      }
       // Observed runs and the agent's identity at grant time are printed as two
       // separate facts. Fusing them into one "earned on" line asserts that those
       // runs were produced by that config, which the platform cannot establish.

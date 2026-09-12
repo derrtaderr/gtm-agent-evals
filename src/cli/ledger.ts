@@ -23,6 +23,7 @@ import {
   ledgerEntry,
   checkGrants,
   grantsForAgent,
+  archiveGrant,
   DEFAULT_FALSIFIER_REGISTRY,
   loadFalsifierRegistry,
   renderLedgerTable,
@@ -52,6 +53,7 @@ export const LEDGER_OPTIONS: Record<string, readonly string[]> = {
     "agents", "grants", "telemetry", "agent", "tier", "confirm", "granted-by",
     "note", "falsifiers", "as-of",
   ],
+  archive: ["grants", "grant", "confirm", "archived-by", "as-of"],
   check: ["agents", "grants", "telemetry", "falsifiers", "as-of", "out"],
   status: ["agents", "grants", "telemetry", "falsifiers", "agent", "as-of", "out"],
 };
@@ -234,6 +236,38 @@ export function cmdGrant(options: Options, io: CliIo): number {
   return EXIT.PASS;
 }
 
+export function cmdArchive(options: Options, io: CliIo): number {
+  const grantsPath = required(options, "grants", "archive");
+  const id = required(options, "grant", "archive");
+
+  const all = loadGrants(grantsPath);
+  const grant = all.find((g) => g.id === id);
+  if (!grant) {
+    throw new UsageError(
+      `archive: no grant "${id}" in ${grantsPath}. Run \`check\` or \`status\` to list the ` +
+        `grant ids actually on file.`,
+    );
+  }
+
+  const archived = archiveGrant(
+    grant,
+    {
+      confirm: optional(options, "confirm") ?? "",
+      archivedBy: optional(options, "archived-by") ?? "",
+    },
+    { archivedAt: asOf(options) },
+  );
+  saveGrant(archived, grantsPath);
+
+  io.out(`archived ${archived.id} [${archived.tier}] for ${archived.agentId}`);
+  io.out(`  by ${archived.archivedBy} at ${archived.archivedAt}`);
+  io.out(
+    `  the grant and its verdict stay in the ledger and in \`status --agent\`; it no longer ` +
+      `confers a tier, and \`check\` no longer alarms on it.`,
+  );
+  return EXIT.PASS;
+}
+
 export function cmdCheck(options: Options, io: CliIo): number {
   const agents = loadAgents(required(options, "agents", "check"));
   const grants = loadGrants(required(options, "grants", "check"));
@@ -248,7 +282,12 @@ export function cmdCheck(options: Options, io: CliIo): number {
   renderCheckReport(io, checks);
   writeLedger(options, buildLedger(agents, grants, deps));
 
-  return checks.some((c) => c.status !== "VALID") ? EXIT.AUTONOMY : EXIT.PASS;
+  // Only UNARCHIVED grants drive the exit code. A revoked grant is never
+  // deleted, so without this a single historical incident alarms forever — and
+  // an alarm that cannot be cleared is an alarm that gets ignored.
+  return checks.some((c) => c.status !== "VALID" && !c.archived)
+    ? EXIT.AUTONOMY
+    : EXIT.PASS;
 }
 
 export function cmdStatus(options: Options, io: CliIo): number {

@@ -82,6 +82,11 @@ export function checkGrant(grant: AutonomyGrant, deps: CheckDeps): GrantCheck {
     status: worstStatus(falsifiers),
     falsifiers,
     checkedAt: deps.asOf,
+    // The falsifiers above were evaluated either way. Archiving decides whether
+    // this grant drives an alarm, never whether it is looked at.
+    archived: grant.archivedAt !== undefined,
+    ...(grant.archivedAt ? { archivedAt: grant.archivedAt } : {}),
+    ...(grant.archivedBy ? { archivedBy: grant.archivedBy } : {}),
   };
 }
 

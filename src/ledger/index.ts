@@ -28,8 +28,16 @@ export {
   saveGrant,
   loadGrants,
   grantsForAgent,
+  priorEraRuns,
+  archiveGrant,
+  archiveConfirmationPhrase,
 } from "./grants.js";
-export type { CreateGrantInput, CreateGrantOptions } from "./grants.js";
+export type {
+  CreateGrantInput,
+  CreateGrantOptions,
+  ArchiveGrantInput,
+  ArchiveGrantOptions,
+} from "./grants.js";
 export { GrantRefused, InsufficientEvidence } from "./errors.js";
 export { checkGrant, checkGrants, worstStatus } from "./check.js";
 export type { CheckDeps } from "./check.js";
