@@ -57,7 +57,37 @@ export type CreateGrantInput = {
 export type CreateGrantOptions = {
   /** Injectable clock (ISO 8601); defaults to now. */
   grantedAt?: string;
+  /** Surfaced to the operator BEFORE they type the confirmation. Warnings never
+   *  block — they exist so the confirmation is informed. */
+  onWarn?: (message: string) => void;
 };
+
+/** The runs a grant rests on that were recorded BEFORE the agent's current
+ *  registration — that is, before the config now on file existed.
+ *
+ *  This is the honest half of a known hole (README, "What the ledger does not
+ *  know yet"). A TelemetryEvent carries no config hash, so the platform cannot
+ *  say which configuration produced a given run. What it CAN say, with data
+ *  already in the store, is that a run predates the current registration, which
+ *  makes it prior-era evidence by definition: whatever produced it, it was not
+ *  the config on file now. */
+export function priorEraRuns(
+  agent: AgentRecord,
+  events: TelemetryEvent[],
+  runIds: string[],
+): TelemetryEvent[] {
+  // Only meaningful once a rotation has actually happened. On a FIRST
+  // registration `configSince === registeredAt`, and an agent's runs almost
+  // always predate the day somebody got around to registering it — warning
+  // there would fire on every first grant and teach operators to ignore the
+  // warning, which costs more than it buys.
+  if (agent.configSince === agent.registeredAt) return [];
+  const boundary = Date.parse(agent.configSince);
+  if (Number.isNaN(boundary)) return [];
+  return events.filter(
+    (e) => runIds.includes(e.runId) && Date.parse(e.timestamp) < boundary,
+  );
+}
 
 /** Build a grant, or refuse with the reason. Every refusal names what would fix
  *  it, because the operator reading it is mid-promotion and the alternative is
@@ -101,6 +131,18 @@ export function createGrant(
   const grantedAt = options.grantedAt ?? new Date().toISOString();
   const own = agentEvents(events, agent);
   const runIds = own.slice(own.length - streak).map((e) => e.runId);
+
+  const priorEra = priorEraRuns(agent, events, runIds);
+  if (priorEra.length > 0 && options.onWarn) {
+    options.onWarn(
+      `${priorEra.length} of the ${runIds.length} runs this grant rests on were recorded BEFORE ` +
+        `${agent.id}'s current config was registered (${agent.configSince}), so they were not produced by ` +
+        `the configuration now on file (${agent.configHash}): ` +
+        `${priorEra.map((e) => e.runId).join(" ")}. ` +
+        `The platform cannot yet tell which config produced a run — see the config-lineage ` +
+        `limitation in the README. Confirm only if you know those runs still represent this agent.`,
+    );
+  }
 
   return {
     id: grantId(agent.id, tier, grantedAt),

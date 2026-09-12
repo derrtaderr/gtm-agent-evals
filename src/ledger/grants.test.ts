@@ -9,6 +9,7 @@ import {
   saveGrant,
   loadGrants,
   grantsForAgent,
+  priorEraRuns,
 } from "./grants.js";
 import { registerAgent } from "./agents.js";
 import { DEFAULT_FALSIFIER_REGISTRY } from "./falsifiers.js";
@@ -134,6 +135,52 @@ describe("createGrant records what the grant was earned on", () => {
 
   it("stamps the grant time from the injected clock", () => {
     expect(createGrant(grantArgs(), at).grantedAt).toBe("2026-09-05T00:00:00.000Z");
+  });
+});
+
+// B1: the platform cannot yet tell which config produced a given run —
+// TelemetryEvent carries no config hash. The cheap strengthening available with
+// data already in the store is `configSince`: a run predating the current
+// config's registration was produced before this config existed. It only means
+// anything once a rotation has happened, which is why a first registration
+// (configSince === registeredAt) never warns.
+describe("prior-era evidence (the known config-lineage hole)", () => {
+  // A ROTATED agent: first seen 09-01, but its current config only since
+  // 09-04T00:00:00Z. The streak runs land at 09-02, 09-03 and 09-04 (all
+  // T00:00:00Z), so run-4 sits ON the boundary and the other two behind it —
+  // which is what makes this fixture test the split rather than "all of them".
+  const rotated = { ...agent, registeredAt: "2026-09-01T00:00:00.000Z", configSince: "2026-09-04T00:00:00.000Z" };
+
+  it("names the streak runs that predate the current config's registration", () => {
+    const found = priorEraRuns(rotated, cleanStreak, ["run-2", "run-3", "run-4"]);
+    expect(found.map((e) => e.runId)).toEqual(["run-2", "run-3"]);
+  });
+
+  it("finds nothing when the agent has never rotated its config", () => {
+    expect(priorEraRuns(agent, cleanStreak, ["run-2", "run-3", "run-4"])).toEqual([]);
+  });
+
+  it("only considers the runs the grant actually rests on", () => {
+    const found = priorEraRuns(rotated, cleanStreak, ["run-3"]);
+    expect(found.map((e) => e.runId)).toEqual(["run-3"]);
+  });
+
+  it("WARNS at grant time when the streak rests on runs from before the current config", () => {
+    const warnings: string[] = [];
+    createGrant(grantArgs({ agent: rotated }), { ...at, onWarn: (w) => warnings.push(w) });
+    expect(warnings.join("\n")).toMatch(/2 of the 3 runs/);
+    expect(warnings.join("\n")).toMatch(/run-2 run-3/);
+  });
+
+  it("still grants after warning — this is an informed confirmation, not a second gate", () => {
+    const g = createGrant(grantArgs({ agent: rotated }), { ...at, onWarn: () => {} });
+    expect(g.tier).toBe("auto");
+  });
+
+  it("stays silent on a first grant, when no rotation has happened", () => {
+    const warnings: string[] = [];
+    createGrant(grantArgs(), { ...at, onWarn: (w) => warnings.push(w) });
+    expect(warnings).toEqual([]);
   });
 });
 

@@ -188,7 +188,14 @@ export type AgentRecord = {
    *  evidence stream is associated, which makes every evidence falsifier
    *  UNEVALUABLE rather than silently satisfied. */
   configIds: string[];
+  /** When this agent was FIRST registered. Stable across re-registrations. */
   registeredAt: string;
+  /** When the CURRENT `configHash` was first registered. Equal to
+   *  `registeredAt` until a config rotates, after which it moves and
+   *  `registeredAt` does not. The gap between them is the only config-lineage
+   *  signal the platform has, because a TelemetryEvent carries no config hash
+   *  (see "What the ledger does not know yet" in the README). */
+  configSince: string;
 };
 
 /** What the grant was earned ON, frozen at grant time. The falsifiers compare

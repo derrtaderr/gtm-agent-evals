@@ -127,13 +127,17 @@ export function renderAgentDetail(
     io.out(`    ${c.grantId}  [${c.tier}]  ->  ${c.status}`);
     if (g) {
       io.out(`      granted ${g.grantedAt} by ${g.grantedBy}`);
-      io.out(
-        `      earned on: streak ${g.evidence.streak}/${g.evidence.gateN}, ` +
-          `config ${g.evidence.configHash}, model ${g.evidence.modelId}`,
-      );
+      // Observed runs and the agent's identity at grant time are printed as two
+      // separate facts. Fusing them into one "earned on" line asserts that those
+      // runs were produced by that config, which the platform cannot establish.
+      io.out(`      evidence: a streak of ${g.evidence.streak}/${g.evidence.gateN} clean runs`);
       if (g.evidence.runIds.length > 0) {
         io.out(`      runs: ${g.evidence.runIds.join(" ")}`);
       }
+      io.out(
+        `      agent at grant time: config ${g.evidence.configHash}, model ${g.evidence.modelId} ` +
+          `(the falsifier baseline; run-era config lineage is not tracked)`,
+      );
       if (g.evidence.note) io.out(`      note: ${g.evidence.note}`);
     }
     io.out("      falsifiers:");

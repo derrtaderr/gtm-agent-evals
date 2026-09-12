@@ -34,6 +34,7 @@ import {
 import { readEvents } from "../telemetry/jsonl.js";
 import type { FalsifierRegistry, Ledger, TelemetryEvent } from "../types.js";
 import { EXIT, UsageError, InputError } from "./exit.js";
+import { InsufficientEvidence } from "../ledger/errors.js";
 import { readJsonFile } from "./load.js";
 import type { CliIo } from "./io.js";
 
@@ -110,6 +111,12 @@ function writeLedger(options: Options, ledger: Ledger): void {
 
 export function cmdRegister(options: Options, io: CliIo): number {
   const store = required(options, "agents", "register");
+  const agentId = required(options, "id", "register");
+  // Read the existing record first. Without it a re-registration looks like a
+  // brand-new agent, first-seen resets, and a config ROTATION becomes
+  // indistinguishable from an agent nobody had registered yet — which is
+  // exactly the distinction the prior-era warning rests on.
+  const previous = loadAgents(store).find((a) => a.id === agentId);
   const gateNRaw = optional(options, "gate-n");
   let gateN: number | undefined;
   if (gateNRaw !== undefined) {
@@ -126,7 +133,7 @@ export function cmdRegister(options: Options, io: CliIo): number {
 
   const agent = registerAgent(
     {
-      id: required(options, "id", "register"),
+      id: agentId,
       name: required(options, "name", "register"),
       ...(optional(options, "description") ? { description: optional(options, "description") } : {}),
       configHash: required(options, "config-hash", "register"),
@@ -134,12 +141,18 @@ export function cmdRegister(options: Options, io: CliIo): number {
       ...(gateN !== undefined ? { gateN } : {}),
       configIds,
     },
-    { registeredAt: asOf(options) },
+    { registeredAt: asOf(options), previous },
   );
   saveAgent(agent, store);
 
   io.out(`registered ${agent.id} (${agent.name}) -> ${store}`);
   io.out(`  model ${agent.modelId}, config ${agent.configHash}, gateN ${agent.gateN}`);
+  if (previous && previous.configHash !== agent.configHash) {
+    io.out(
+      `  config ROTATED from ${previous.configHash} (in place since ${previous.configSince}). ` +
+        `Any grant earned on the old hash will be REVOKED by the next \`check\`.`,
+    );
+  }
   io.out(`  eval configs: ${configIds.length > 0 ? configIds.join(", ") : "(none)"}`);
   if (configIds.length === 0) {
     io.err(
@@ -170,7 +183,18 @@ export function cmdGrant(options: Options, io: CliIo): number {
     );
   }
 
-  const events = readTelemetry(options) ?? [];
+  // Fail closed on a missing evidence source. Defaulting to [] would produce
+  // "streak of 0, short of gateN" — a true sentence that names the wrong cause
+  // and sends the operator to look at the agent instead of at their command.
+  const events = readTelemetry(options);
+  if (events === undefined) {
+    throw new InsufficientEvidence(
+      `grant: no --telemetry <events.jsonl> supplied, so no evidence could be read for ` +
+        `${agent.id}. A grant is a decision about evidence; without a source there is nothing ` +
+        `to decide on. This is not the same as the agent having no clean runs.`,
+    );
+  }
+
   const grant = createGrant(
     {
       agent,
@@ -180,7 +204,7 @@ export function cmdGrant(options: Options, io: CliIo): number {
       grantedBy: optional(options, "granted-by") ?? "",
       registry: readRegistry(options),
     },
-    { grantedAt: asOf(options) },
+    { grantedAt: asOf(options), onWarn: (w) => io.err(`warning: ${w}`) },
   );
   const note = optional(options, "note");
   if (note) grant.evidence.note = note;
@@ -188,9 +212,22 @@ export function cmdGrant(options: Options, io: CliIo): number {
 
   io.out(`granted ${grant.tier} to ${grant.agentId}`);
   io.out(`  grant ${grant.id}, by ${grant.grantedBy} at ${grant.grantedAt}`);
+  // Two separate facts, printed separately. The runs are what was observed; the
+  // config and model are what the agent IS at this instant and what the
+  // falsifiers will measure drift against. The old single line ("earned on:
+  // streak 3/3, config <hash>") fused them and so asserted a lineage this
+  // platform cannot establish — a TelemetryEvent carries no config hash.
   io.out(
-    `  earned on: streak ${grant.evidence.streak}/${grant.evidence.gateN}, ` +
-      `config ${grant.evidence.configHash}, model ${grant.evidence.modelId}`,
+    `  evidence: a streak of ${grant.evidence.streak}/${grant.evidence.gateN} clean runs` +
+      (grant.evidence.runIds.length > 0 ? ` — ${grant.evidence.runIds.join(" ")}` : ""),
+  );
+  io.out(
+    `  agent at grant time: config ${grant.evidence.configHash}, model ${grant.evidence.modelId} ` +
+      `(the baseline the falsifiers compare against)`,
+  );
+  io.out(
+    `  note: run-era config lineage is not tracked yet, so those runs are not proven to have ` +
+      `been produced by that config. See "What the ledger does not know yet" in the README.`,
   );
   io.out(`  falsifiers: ${grant.falsifiers.join(", ")}`);
   io.out(`  this grant holds only while those stay true — re-check with \`check\`.`);
