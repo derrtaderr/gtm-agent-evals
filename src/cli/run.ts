@@ -40,6 +40,7 @@ import {
 } from "./load.js";
 import { printVerdict, printRegression } from "./print.js";
 import { LEDGER_OPTIONS, cmdRegister, cmdGrant, cmdArchive, cmdCheck, cmdStatus } from "./ledger.js";
+import { loadAgents } from "../ledger/index.js";
 import { defaultIo, type CliIo } from "./io.js";
 
 export type { CliIo } from "./io.js";
@@ -72,8 +73,8 @@ function requireOption(
 /** The flags each command accepts. An unrecognized flag is a usage error, not a
  *  silently-ignored token — in a CI gate a typo'd flag must fail, never pass. */
 const ALLOWED_OPTIONS: Record<string, readonly string[]> = {
-  eval: ["config", "run", "rules-only", "telemetry"],
-  record: ["config", "run", "store", "rules-only", "telemetry"],
+  eval: ["config", "run", "rules-only", "telemetry", "agents", "agent"],
+  record: ["config", "run", "store", "rules-only", "telemetry", "agents", "agent"],
   regress: ["store", "runs"],
   report: ["telemetry"],
   ...LEDGER_OPTIONS,
@@ -145,12 +146,67 @@ async function evaluateFrom(
   return { run, config, verdict, mode: rulesOnly ? "rules-only" : "full" };
 }
 
+/** Resolve `--agent` against `--agents`, so a run can record WHICH agent and
+ *  which configuration produced it.
+ *
+ *  The operator names the agent and the registry supplies the hash. Taking the
+ *  hash as its own flag would let the two drift apart on a typo, and a run
+ *  stamped with a hash no agent holds is worse than an unstamped one: it looks
+ *  like verified evidence and belongs to nothing.
+ *
+ *  Returns undefined when no agent was named, which writes an unattributed
+ *  event exactly as every release before this one did. */
+function resolveAttribution(
+  options: Record<string, string | boolean>,
+  command: string,
+  io: CliIo,
+  config: EvalConfig,
+): { agentId: string; agentConfigHash: string } | undefined {
+  const agentId = options.agent;
+  const agentsPath = options.agents;
+  if (typeof agentId !== "string" || agentId.length === 0) {
+    if (typeof agentsPath === "string" && agentsPath.length > 0) {
+      throw new UsageError(
+        `${command}: --agents was given without --agent <id>. Name the agent whose run this is, ` +
+          `or drop --agents to record an unattributed run.`,
+      );
+    }
+    return undefined;
+  }
+  if (typeof agentsPath !== "string" || agentsPath.length === 0) {
+    throw new UsageError(
+      `${command}: --agent ${agentId} needs --agents <agents.jsonl> to resolve it. The config ` +
+        `hash is read from the registry, never typed at the command line, so the run's ` +
+        `attribution cannot drift from the agent's registration.`,
+    );
+  }
+  const agent = loadAgents(agentsPath).find((a) => a.id === agentId);
+  if (!agent) {
+    throw new UsageError(
+      `${command}: no agent "${agentId}" in ${agentsPath}. Register it first — a run attributed ` +
+        `to an agent nobody registered is evidence for nothing.`,
+    );
+  }
+  // Attribution without association writes a run the ledger will never read,
+  // because the ledger gathers an agent's evidence through its configIds.
+  const configId = config.id ?? config.archetype;
+  if (!agent.configIds.includes(configId)) {
+    io.err(
+      `warning: ${agent.id} does not list "${configId}" in its eval configs, so the ledger will ` +
+        `not count this run as its evidence. Re-register with --eval-configs ${configId} to ` +
+        `associate them.`,
+    );
+  }
+  return { agentId: agent.id, agentConfigHash: agent.configHash };
+}
+
 function emitTelemetry(
   options: Record<string, string | boolean>,
   config: EvalConfig,
   run: AgentRun,
   verdict: Verdict,
   durationMs: number,
+  attribution?: { agentId: string; agentConfigHash: string },
 ): void {
   const path = options.telemetry;
   if (typeof path !== "string" || path.length === 0) return;
@@ -161,6 +217,7 @@ function emitTelemetry(
     archetype: config.archetype,
     verdict,
     durationMs,
+    ...(attribution ?? {}),
   };
   void makeJsonlSink(path)(event);
 }
@@ -171,7 +228,8 @@ async function cmdEval(
 ): Promise<number> {
   const start = Date.now();
   const { run, config, verdict, mode } = await evaluateFrom(options, io, "eval");
-  emitTelemetry(options, config, run, verdict, Date.now() - start);
+  const attribution = resolveAttribution(options, "eval", io, config);
+  emitTelemetry(options, config, run, verdict, Date.now() - start, attribution);
   printVerdict(io, config, verdict, mode);
   return verdict.status === "PASS" ? EXIT.PASS : EXIT.BLOCK;
 }
@@ -183,7 +241,8 @@ async function cmdRecord(
   const store = requireOption(options, "store", "record");
   const start = Date.now();
   const { run, config, verdict, mode } = await evaluateFrom(options, io, "record");
-  emitTelemetry(options, config, run, verdict, Date.now() - start);
+  const attribution = resolveAttribution(options, "record", io, config);
+  emitTelemetry(options, config, run, verdict, Date.now() - start, attribution);
 
   const golden = record(run, verdict);
   saveGolden(golden, store);
@@ -245,7 +304,9 @@ const USAGE = `gtm-agent-evals — eval + regression gate for GTM agents, and th
 
 Evaluate one run:
   eval    --config <cfg.json> --run <run.json> [--rules-only] [--telemetry <events.jsonl>]
+          [--agents <agents.jsonl> --agent <id>]
   record  --config <cfg.json> --run <run.json> --store <goldens.jsonl> [--rules-only] [--telemetry <p>]
+          [--agents <agents.jsonl> --agent <id>]
   regress --store <goldens.jsonl> --runs <fresh-runs.json>
   report  --telemetry <events.jsonl>
 
@@ -262,6 +323,12 @@ A clean-run streak makes an agent ELIGIBLE. Only \`grant\` promotes, and only wi
 the confirmation phrase typed exactly. \`check\` re-tests the facts each grant
 depends on and demotes the agent when one breaks. \`archive\` resolves a handled
 incident so it stops alarming, without deleting it from the record.
+
+Eligibility is scoped to the CONFIGURATION the runs came from: passing
+--agents/--agent to \`eval\` stamps each run with the agent's current config hash,
+and only runs from the config now on file can earn a grant for it. Rotating a
+config therefore empties the streak rather than letting the previous version's
+clean runs earn the new one's autonomy.
 
 Exit codes: 0 PASS, 1 usage, 2 unreadable/malformed input, 3 BLOCK, 4 REGRESSION,
 5 AUTONOMY (a grant is not VALID, or was refused for lack of evidence).
