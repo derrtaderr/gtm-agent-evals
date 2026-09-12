@@ -25,3 +25,14 @@ export class InsufficientEvidence extends Error {
     this.name = "InsufficientEvidence";
   }
 }
+
+/** A review was recorded wrong — a missing evidence pointer, a verdict outside
+ *  the vocabulary, or a reviewer who is not independent of the agent. Exit 1,
+ *  like GrantRefused: the operator's invocation is the problem, and refusing at
+ *  write time is what keeps an untrustworthy review out of the file. */
+export class ReviewRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReviewRefused";
+  }
+}

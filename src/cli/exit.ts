@@ -18,7 +18,7 @@
 // agent has not earned this" — whether it is said at grant time or on a later
 // re-check.
 
-import { GrantRefused, InsufficientEvidence } from "../ledger/errors.js";
+import { GrantRefused, InsufficientEvidence, ReviewRefused } from "../ledger/errors.js";
 
 export const EXIT = {
   PASS: 0,
@@ -53,7 +53,8 @@ export class InputError extends Error {
  *  unexpected I/O error) fails closed to exit 2 — an unreadable input is never
  *  allowed to look like a PASS. */
 export function exitCodeFor(err: unknown): number {
-  if (err instanceof UsageError || err instanceof GrantRefused) return EXIT.USAGE;
+  if (err instanceof UsageError || err instanceof GrantRefused || err instanceof ReviewRefused)
+    return EXIT.USAGE;
   if (err instanceof InsufficientEvidence) return EXIT.AUTONOMY;
   return EXIT.INPUT;
 }

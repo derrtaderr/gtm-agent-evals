@@ -25,6 +25,7 @@ import type {
   FalsifierResult,
   GrantCheck,
   GrantStatus,
+  ReviewRecord,
   TelemetryEvent,
 } from "../types.js";
 
@@ -33,6 +34,9 @@ export type CheckDeps = {
   /** undefined means no telemetry source was configured — distinct from an
    *  empty array, which means a source was read and held no runs. */
   events?: TelemetryEvent[];
+  /** undefined means no reviews source was configured — the same distinction
+   *  `events` makes, for the same fail-closed reason. */
+  reviews?: ReviewRecord[];
   registry: FalsifierRegistry;
   /** Evaluate as of this instant (ISO 8601). */
   asOf: string;
@@ -54,6 +58,7 @@ export function checkGrant(grant: AutonomyGrant, deps: CheckDeps): GrantCheck {
     grant,
     agent: deps.agents.find((a) => a.id === grant.agentId),
     events: deps.events,
+    reviews: deps.reviews,
     asOf: deps.asOf,
   };
 

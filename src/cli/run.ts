@@ -39,7 +39,15 @@ import {
   validateFreshPairs,
 } from "./load.js";
 import { printVerdict, printRegression } from "./print.js";
-import { LEDGER_OPTIONS, cmdRegister, cmdGrant, cmdArchive, cmdCheck, cmdStatus } from "./ledger.js";
+import {
+  LEDGER_OPTIONS,
+  cmdRegister,
+  cmdGrant,
+  cmdArchive,
+  cmdReview,
+  cmdCheck,
+  cmdStatus,
+} from "./ledger.js";
 import { loadAgents } from "../ledger/index.js";
 import { defaultIo, type CliIo } from "./io.js";
 
@@ -316,8 +324,10 @@ Decide what an agent may do unattended (the ledger):
   grant    --agents <a> --grants <g> --telemetry <e> --agent <id> --tier <advisory|auto>
            --confirm "grant <tier> to <id>" --granted-by <who> [--note <n>] [--falsifiers <r.json>]
   archive  --grants <g> --grant <grant-id> --confirm "archive <grant-id>" --archived-by <who>
-  check    --agents <a> --grants <g> [--telemetry <e>] [--falsifiers <r.json>] [--as-of <iso>] [--out <l.json>]
-  status   --agents <a> --grants <g> [--telemetry <e>] [--agent <id>] [--as-of <iso>] [--out <l.json>]
+  review   --reviews <r> --agent <id> --reviewer <who> --verdict <BLESS|BLOCK> --evidence <ptr>
+           [--grants <g>] [--note <n>]
+  check    --agents <a> --grants <g> [--telemetry <e>] [--reviews <r>] [--falsifiers <r.json>] [--as-of <iso>] [--out <l.json>]
+  status   --agents <a> --grants <g> [--telemetry <e>] [--reviews <r>] [--agent <id>] [--as-of <iso>] [--out <l.json>]
 
 A clean-run streak makes an agent ELIGIBLE. Only \`grant\` promotes, and only with
 the confirmation phrase typed exactly. \`check\` re-tests the facts each grant
@@ -360,6 +370,9 @@ export async function run(argv: string[], io: CliIo = defaultIo): Promise<number
       case "archive":
         rejectUnknownOptions(options, "archive");
         return cmdArchive(options, io);
+      case "review":
+        rejectUnknownOptions(options, "review");
+        return cmdReview(options, io);
       case "check":
         rejectUnknownOptions(options, "check");
         return cmdCheck(options, io);

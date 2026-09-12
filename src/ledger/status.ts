@@ -23,6 +23,7 @@ import type {
   AutonomyGrant,
   FalsifierRegistry,
   Ledger,
+  ReviewRecord,
   TelemetryEvent,
 } from "../types.js";
 
@@ -31,6 +32,8 @@ export type LedgerDeps = {
    *  empty array. With no source the streak is 0 and nothing is eligible,
    *  because an unread evidence stream is not a clean one. */
   events?: TelemetryEvent[];
+  /** undefined means no reviews source was configured. */
+  reviews?: ReviewRecord[];
   registry: FalsifierRegistry;
   asOf: string;
 };
