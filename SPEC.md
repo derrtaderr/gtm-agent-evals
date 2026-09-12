@@ -251,11 +251,36 @@ Every non-VALID verdict prints the broken falsifier's `statement` and the
 `evidence` line that moved it, both named.
 
 **Effective tier** = the highest tier among that agent's grants whose current
-status is VALID, falling back to the next-lower grant that still holds, and to
-the `supervised` floor when none does. Revocation is therefore a *demotion*, not
-an erasure: the grant record stays in the ledger with its verdict, because "this
-agent used to be cleared for auto and lost it on 9/14" is the most useful line in
-the file.
+status is VALID **and which has not been archived**, falling back to the
+next-lower grant that still holds, and to the `supervised` floor when none does.
+Revocation is therefore a *demotion*, not an erasure: the grant record stays in
+the ledger with its verdict, because "this agent used to be cleared for auto and
+lost it on 9/14" is the most useful line in the file.
+
+### Resolving an incident: `archive`
+
+Because grants are never deleted, a revoked grant would otherwise make `check`
+exit 5 forever, and an alarm that cannot be cleared is an alarm operators learn
+to ignore. `archive` is the explicit resolution: a typed confirmation naming the
+grant, plus `--archived-by`, recorded on the row.
+
+An archived grant keeps every field and every falsifier verdict, and still
+prints in `check` and in `status --agent`. What changes is that it confers no
+tier and is excluded from `check`'s exit-code calculus (and from the alarm
+counts in the summary, so the numbers and the exit code always agree).
+
+Archiving therefore doubles as the **manual revoke** path: retiring a grant that
+still holds is a deliberate demotion, recorded rather than erased. This is why
+v1 ships no separate `revoke` command.
+
+### The status table's INCIDENT column
+
+The glance surface must never read clean green mid-incident. An agent whose
+`auto` grant is revoked while its `advisory` grant still holds has an effective
+tier of `advisory` and a VALID top grant — a row that looks perfectly healthy
+while the agent has in fact been demoted. The `INCIDENT` column names every
+unarchived grant that is not holding, so the demotion is visible without
+opening the detail view.
 
 ## Commands (fitting the existing CLI, `src/cli/`)
 
@@ -263,11 +288,28 @@ the file.
 register --agents <agents.jsonl> --id <id> --name <n> --model <m> --config-hash <h>
          [--eval-configs a,b] [--gate-n <N>] [--description <d>]
 grant    --agents <a> --grants <g> --telemetry <e> --agent <id> --tier <t>
-         --confirm "grant <tier> to <agent-id>" [--granted-by <who>] [--falsifiers <r.json>]
+         --confirm "grant <tier> to <agent-id>" --granted-by <who> [--note <n>] [--falsifiers <r.json>]
+archive  --grants <g> --grant <grant-id> --confirm "archive <grant-id>" --archived-by <who>
 check    --agents <a> --grants <g> [--telemetry <e>] [--falsifiers <r.json>]
          [--as-of <iso>] [--out <ledger.json>]
 status   --agents <a> --grants <g> [--telemetry <e>] [--agent <id>] [--as-of <iso>] [--out <l.json>]
 ```
+
+`--granted-by` and `--archived-by` are REQUIRED, not optional: a decision with
+no human on it is not a decision, and an anonymous resolution is
+indistinguishable from the alarm never having fired.
+
+### Deliberate tier semantics
+
+- **Tiers may be skipped.** `supervised` → `auto` in one step is allowed. The
+  ladder is a vocabulary for where the human sits, not a promotion track to be
+  climbed one rung at a time, and an operator who has read the evidence may
+  decide the top rung is right. The streak and the typed confirmation are what
+  gate it, not the distance travelled.
+- **A held tier may be re-granted.** This is how an agent recovers a tier after
+  a revocation. Re-granting is idempotent within one instant (the grant id is
+  derived from agent, tier and time) and produces a new row otherwise, which is
+  what makes "granted, revoked, re-earned" legible in the file.
 
 Exit codes extend additively (existing codes are not renumbered): **5 =
 AUTONOMY**, at least one grant is not VALID. `check` is the CI-schedulable
@@ -287,6 +329,29 @@ surface first.
 `GrantStatus`, `GrantCheck`, `AgentLedgerEntry`. **No existing type is changed or
 removed**, which is what keeps all 293 prior tests green.
 
+## Known limitations (documented, not fixed, in session 1)
+
+- **Run-era config lineage is untracked, so eligibility has no config scope.**
+  A `TelemetryEvent` carries no config hash, so the platform cannot say which
+  version of an agent produced a run. Concretely: rotate a config, watch the
+  grant be correctly REVOKED, then re-grant immediately with zero runs under the
+  new config — and it succeeds, resting on the previous version's streak.
+  Mitigated but NOT closed in session 1 by (a) a loud grant-time warning naming
+  the runs that predate the current config's registration, and (b) grant
+  surfaces that never claim the observed runs came from the current config.
+  **Session-2 fix:** add a config hash to `TelemetryEvent` and make an eval run
+  agent-aware, then scope the eligibility streak to runs produced by the current
+  configuration. Cross-cutting into the eval half, which is why it is not
+  patched here.
+- **No write lock on the JSONL stores.** Read-modify-write plus an atomic
+  rename; concurrent writers can lose a write. Fail-safe in direction — the
+  surviving state is the older, more alarming one, never a falsely resolved
+  grant — but real. Single-writer, or add a lock, under automation.
+- **`--as-of` does not cap future-dated events.** It pins the clock for
+  staleness and the re-check, but an event timestamped after it is still read,
+  so a BLOCK from the future still revokes. Deliberate: ignoring a recorded
+  failure because of a clock argument is the worse error.
+
 ## Session-2 non-goals (named so they are not improvised into session 1)
 
 - Dashboard view of the ledger (session 1 writes the JSON; session 2 renders it).
@@ -296,8 +361,9 @@ removed**, which is what keeps all 293 prior tests green.
 - redaction-gate egress wiring as a tier precondition.
 - Per-task-class tiers.
 - A scheduled re-check ledger with carried-forward verdicts and recheck intervals.
-- A manual `revoke` command. v1 revokes by evidence only — the falsifier breaks
-  and `check` demotes. A human who wants a grant gone edits the grant store.
+- A manual `revoke` command as such. `archive` covers it: an archived grant
+  confers no tier, so retiring one deliberately is a recorded act rather than a
+  hand edit.
 
 ## Iteration log
 
@@ -306,3 +372,9 @@ removed**, which is what keeps all 293 prior tests green.
 - 2026-09-11 — Lane G specced: agent identity, the three-tier vocabulary, and
   falsifier-backed autonomy grants. First additive change to `types.ts` since the
   six-lane build; baseline before the lane is 293 tests green on `a56edc2`.
+- 2026-09-11 — independent ship-check returned BLOCK. Wave 1 applied: the
+  config-lineage hole named as a known limitation and mitigated with a
+  rotation-aware grant-time warning; grant surfaces stopped asserting run-era
+  config lineage; `AgentRecord` gained `configSince`; `archive` added as the
+  incident-resolution mechanic; the status table gained an `INCIDENT` column.
+  The eligibility fix itself remains session 2.

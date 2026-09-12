@@ -22,11 +22,15 @@ Two files outside the lane were touched, both minimally:
 ## The operator's flow
 
 ```
-register ──▶ observe ──▶ grant ──▶ check ──▶ (demote)
-   │           │           │         │
+register ──▶ observe ──▶ grant ──▶ check ──▶ (demote) ──▶ archive
+   │           │           │         │                       │
+   │           │           │         │                       └─ resolves a handled
+   │           │           │         │                          incident so the alarm
+   │           │           │         │                          can go green again
    │           │           │         └─ re-runs every falsifier; worst wins
    │           │           └─ refuses unless streak ≥ gateN AND a human typed
-   │           │              the confirmation phrase for this agent+tier
+   │           │              the confirmation phrase for this agent+tier;
+   │           │              WARNS when the streak predates the current config
    │           └─ `status` shows the streak; the eval gate writes the telemetry
    └─ an id, a config hash, a model, and the eval configs that are its evidence
 ```
@@ -55,6 +59,11 @@ command; exit 5 is "at least one grant is not VALID".
 | `--as-of` without a timezone | Refused, exit 2. Local-time parsing would make a staleness verdict depend on who ran the check. |
 | Grant carries zero falsifiers | `SUSPECT`. "Nothing to check" and "everything checks out" are opposite facts. |
 | Grant names a falsifier the registry no longer defines | That falsifier reports UNEVALUABLE → `SUSPECT`. Never dropped: dropping it could flip a SUSPECT grant to VALID by deleting a registry entry. |
+| `grant` with no `--telemetry` | Refused, exit 5, naming the missing source. NOT reported as "streak of 0", which is a true sentence naming the wrong cause. |
+| `grant` on a streak predating the current config | Warns on stderr naming the offending runs, then proceeds. Fires only once a rotation has happened (`configSince !== registeredAt`), so an ordinary first grant is silent. |
+| A grant is revoked and the incident is handled | `archive` it. Exit code returns to 0; the grant keeps its verdict and stays in `check` output and `status --agent`, marked archived with who and when. |
+| `archive` with a wrong phrase / unknown grant / already archived | Refused, exit 1, in all three cases. |
+| Higher grant not holding behind a still-valid lower one | The `INCIDENT` column names it (`auto REVOKED`). The glance view never reads clean green mid-incident. |
 
 ## Exports (all via `src/ledger/index.js`, re-exported from `src/index.js`)
 
@@ -86,9 +95,12 @@ runFalsifier(spec, ctx): FalsifierResult               // a throwing check -> UN
 
 // Grants
 confirmationPhrase(agentId, tier): string   // `grant <tier> to <agentId>`
-createGrant(input, { grantedAt? }): AutonomyGrant
+createGrant(input, { grantedAt?, onWarn? }): AutonomyGrant
   // throws GrantRefused (exit 1) | InsufficientEvidence (exit 5)
 grantId(agentId, tier, grantedAt): string
+priorEraRuns(agent, events, runIds): TelemetryEvent[]   // [] unless rotated
+archiveConfirmationPhrase(id): string       // `archive <id>`
+archiveGrant(grant, { confirm, archivedBy }, { archivedAt? }): AutonomyGrant
 saveGrant / loadGrants / grantsForAgent
 
 // The re-check
@@ -123,20 +135,32 @@ src/ledger/tiers.ts        the vocabulary and its ordering
 src/ledger/agents.ts       AgentRecord + the JSONL store helpers both stores share
 src/ledger/evidence.ts     telemetry read per agent instead of per config
 src/ledger/falsifiers.ts   the registry (data), the CHECKS table, the four checks
-src/ledger/grants.ts       createGrant's two refusals, the grant store
+src/ledger/grants.ts       createGrant's two refusals, the prior-era warning,
+                           archiveGrant, the grant store
 src/ledger/errors.ts       GrantRefused (exit 1) vs InsufficientEvidence (exit 5)
 src/ledger/check.ts        worst-wins re-check
 src/ledger/status.ts       effective tier, computed never stored; the Ledger artifact
 src/ledger/render.ts       three terminal surfaces
-src/cli/ledger.ts          register / grant / check / status
+src/cli/ledger.ts          register / grant / archive / check / status
 examples/falsifiers.json   the default registry, shipped as editable data
 fixtures/ledger/           a synthetic three-agent fleet, calibrated to
                            --as-of 2026-09-07T00:00:00.000Z
 ```
 
-166 tests, deterministic and keyless. `src/cli/ledger-fixtures.test.ts` runs the
+202 tests, deterministic and keyless. `src/cli/ledger-fixtures.test.ts` runs the
 bundled walkthrough and asserts its output, so the README's "every example
 matches real output" promise is enforced rather than hoped for.
+
+## Known limitations (see SPEC.md and the README for the full statement)
+
+- **Eligibility has no config scope.** `TelemetryEvent` carries no config hash,
+  so a streak earned by a previous version of an agent can support a grant for
+  the current one. Mitigated by the `configSince` warning above and by grant
+  surfaces that never claim run-era lineage; the real fix is session 2.
+- **No write lock on the JSONL stores.** Concurrent writers can lose a write.
+  Fail-safe in direction (the surviving state is the more alarming one).
+- **`--as-of` does not cap future-dated events.** A BLOCK from the future still
+  revokes. Fail-closed on purpose.
 
 ## Not in this session (see SPEC.md for the full list)
 
