@@ -5,9 +5,11 @@ agent stack skips: **has this agent earned autonomy, and is it still earning
 it?**
 
 Deterministic rules, an LLM rubric that fails closed, an autonomy gate that
-counts clean runs, golden-trajectory regression, telemetry, a CI gate, and a
-self-contained dashboard. Zero runtime dependencies beyond the Anthropic SDK,
-and the deterministic layers run without any API key at all.
+counts clean runs, golden-trajectory regression, telemetry, a CI gate, a
+self-contained dashboard, and a per-agent autonomy ledger where a grant carries
+the facts that must stay true for it to keep holding. Zero runtime dependencies
+beyond the Anthropic SDK, and the deterministic layers run without any API key
+at all.
 
 ## The problem
 
@@ -27,7 +29,7 @@ agent the way tests gate a deploy, and keeps a record.
 ```bash
 git clone https://github.com/derrtaderr/gtm-agent-evals
 cd gtm-agent-evals
-npm install && npm run build && npm test   # 293 tests
+npm install && npm run build && npm test   # 459 tests
 ```
 
 Evaluate a bad cold email against the bundled outbound config:
@@ -53,7 +55,8 @@ outbound-default [outbound]  ->  BLOCK
 ```
 
 The passing fixture exits 0. Exit codes are a contract: 0 PASS, 1 usage error,
-2 unreadable or malformed input, 3 BLOCK, 4 REGRESSION. A CI job keys on them.
+2 unreadable or malformed input, 3 BLOCK, 4 REGRESSION, 5 AUTONOMY (an autonomy
+grant no longer holds). A CI job keys on them.
 
 ## The layers
 
@@ -115,6 +118,98 @@ No server, no external assets, every event-origin string HTML-escaped:
 node dist/dashboard/cli.js events.jsonl dashboard.html && open dashboard.html
 ```
 
+## "May this agent run unattended?" — the autonomy ledger
+
+Everything above judges a **run**. None of it remembers a **decision**. `report`
+will happily tell you an agent has nine clean runs in a row; nothing anywhere
+records that a person looked at those nine runs and decided this agent may now
+run without a human reading its output — or what would have to change for that
+to stop being true.
+
+The ledger is that record. It is not another gate. It is the layer that answers
+the question the gates produce evidence for.
+
+**Agents get an identity.** A stable id, the config hash and model that define
+what the agent currently is, the clean-run bar it must clear, and the eval
+configs whose telemetry counts as its evidence. That last field is the join: the
+platform's verdicts are already keyed by config, so one mapping associates every
+run you have ever recorded to an agent.
+
+```bash
+node dist/cli/index.js register --agents agents.jsonl \
+  --id example-enricher --name "Example Enricher" \
+  --model example-model-v1 --config-hash sha256:1f0aenricherv3 \
+  --eval-configs research-default --gate-n 3
+```
+
+**Three tiers, defined by where the human sits.** `supervised` — every run is
+reviewed before it has any effect; the floor, never granted. `advisory` — the
+agent runs unattended and its output lands in a human queue as a recommendation.
+`auto` — the output takes effect with nobody in the path. `auto` removes the
+standing review, never the gate: every run is still evaluated, and a BLOCK is
+still a BLOCK.
+
+**A streak makes an agent eligible. A person grants.**
+
+```text
+autonomy ledger — 2026-09-07T00:00:00.000Z
+AGENT               TIER        GRANT    STREAK  LAST   FALSIFIERS
+example-enricher    auto        VALID    3/3 *   PASS   4/4 holding
+example-drafter     supervised  —        0/3     BLOCK  —
+example-researcher  supervised  REVOKED  3/3 *   PASS   3/4 holding
+
+STREAK is clean runs against the agent's gateN; * marks an agent eligible for a grant.
+Eligibility is not autonomy — a grant is a human decision (see the `grant` command).
+```
+
+`grant` refuses twice before it writes anything down: once if the streak is
+short of the bar, and once if a human has not typed a phrase naming this exact
+agent and this exact tier. A counter that promotes itself has not decided
+anything.
+
+```bash
+node dist/cli/index.js grant --agents agents.jsonl --grants grants.jsonl \
+  --telemetry events.jsonl --agent example-enricher --tier auto \
+  --confirm "grant auto to example-enricher" --granted-by you
+```
+
+**The part nothing else does: the grant carries its own falsifiers.** Autonomy
+is not a checkmark you keep. A grant records the facts that must stay true —
+the config hash it was earned on, the model, no BLOCK since, evidence not gone
+stale — and `check` re-tests them.
+
+```bash
+node dist/cli/index.js check --agents fixtures/ledger/agents.jsonl \
+  --grants fixtures/ledger/grants.jsonl --telemetry fixtures/ledger/events.jsonl \
+  --as-of 2026-09-07T00:00:00.000Z
+```
+
+```text
+example-enricher-auto-08bd48bcd395  [auto]  ->  VALID
+example-researcher-advisory-4b51b7ab3e5d  [advisory]  ->  REVOKED
+    BROKEN [config_hash_unchanged]: The agent's configuration is still the one this grant was earned on.
+      config hash is sha256:REWRITTENv3; the grant was earned on sha256:6b22researcherv2
+summary: 2 grant(s) — 1 VALID, 0 SUSPECT, 1 REVOKED
+# exit 5
+```
+
+Somebody rewrote that agent's prompt. The clean runs it was granted on were
+produced by different software, so the grant no longer describes it, and the
+agent drops back to `supervised` until it earns a new one. Every non-VALID
+verdict prints the falsifier's statement and the evidence line that moved it,
+because you should be able to *disagree* with a revocation by reading two lines
+rather than by re-deriving the check.
+
+Falsifiers are data, in `examples/falsifiers.json`. Retuning the freshness
+window is an edit to that file. A registry naming a check that does not exist is
+refused at load — a skipped check reads as VALID downstream, and a grant that is
+valid because nobody looked is the failure this repo exists to prevent. In the
+same spirit, a check that *cannot run* — no telemetry supplied, the agent
+missing from the registry — makes the grant `SUSPECT`, never `VALID`.
+
+`check` exits 5 when any grant is not VALID, so a scheduled job can re-verify a
+fleet the way CI re-verifies a build. `status` reports and never gates.
+
 ## Three worked archetypes
 
 - **content** — voice rules (em dashes, body colons, banned phrases, binary
@@ -153,13 +248,18 @@ checks and printed green is worse than no gate.
 
 ## Receipts
 
-293 tests. Every fail-closed behavior above was adversarially reviewed before
-merge, and the review trail is the development story: independent reviewers
-found a research rule that green-lit fabricated funding numbers, a regression
-classifier blind to a vanished dimension, a telemetry reader that swallowed
-malformed records and string-sorted timestamps, an unescaped field in the
-dashboard, and a CLI that passed on a typo'd flag. Each got a failing test
-before its fix, and the tests stay.
+459 tests, all deterministic and keyless. The eval and regression halves were
+adversarially reviewed before merge, and that review trail is the development
+story: independent reviewers found a research rule that green-lit fabricated
+funding numbers, a regression classifier blind to a vanished dimension, a
+telemetry reader that swallowed malformed records and string-sorted timestamps,
+an unescaped field in the dashboard, and a CLI that passed on a typo'd flag.
+Each got a failing test before its fix, and the tests stay.
+
+The autonomy ledger is newer and has 166 tests of its own, written before the
+code they cover, but it has not yet been through the same independent review.
+Said plainly here rather than folded into the sentence above, because "it has
+tests" and "somebody hostile tried to break it" are different claims.
 
 MIT. `SPEC.md` holds the architecture; each module carries a `WIRING.md` with
 its exact surface.

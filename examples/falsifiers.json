@@ -1,0 +1,27 @@
+{
+  "falsifiers": [
+    {
+      "id": "config_hash_unchanged",
+      "check": "config_hash",
+      "statement": "The agent's configuration is still the one this grant was earned on."
+    },
+    {
+      "id": "model_unchanged",
+      "check": "model_id",
+      "statement": "The agent is still running on the model this grant was earned on."
+    },
+    {
+      "id": "no_block_since_grant",
+      "check": "no_block_since",
+      "statement": "No run by this agent has been BLOCKed since the grant."
+    },
+    {
+      "id": "evidence_not_stale",
+      "check": "evidence_freshness",
+      "statement": "A clean run is recent enough that this grant's evidence still describes the agent.",
+      "params": {
+        "suspectAfterDays": 14
+      }
+    }
+  ]
+}
