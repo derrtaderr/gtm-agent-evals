@@ -256,11 +256,14 @@ export function cmdGrant(options: Options, io: CliIo): number {
         `produced by the configuration above.`,
     );
   } else {
+    const why =
+      agent.configSince === agent.registeredAt
+        ? `this agent has never rotated, so there is only one configuration era to place them in`
+        : `they were recorded at or after ${agent.configSince}`;
     io.out(
       `  lineage: ${verified} run(s) proven by config hash, ${unverified} UNVERIFIED — those ` +
-        `carry no hash, so they are placed by the clock (recorded after ${agent.configSince}) ` +
-        `rather than proven. Run this agent's evals with --agent ${agent.id} to make future ` +
-        `evidence provable.`,
+        `carry no hash, so they are placed by inference (${why}) rather than proven. Run this ` +
+        `agent's evals with --agent ${agent.id} to make future evidence provable.`,
     );
   }
   io.out(`  falsifiers: ${grant.falsifiers.join(", ")}`);
@@ -302,14 +305,34 @@ export function cmdArchive(options: Options, io: CliIo): number {
 
 /** Record one independent review.
  *
- *  `--grants` is accepted so the independence rule can be enforced against the
- *  real grant store rather than on trust. It is optional only because a review
- *  may be recorded before any grant exists; when grants are on file, passing
- *  them is what makes the refusal possible. */
+ *  `--grants` is REQUIRED, and that is the whole point. It was optional in the
+ *  first cut of this command, which meant the reviewer-independence rule could
+ *  be skipped by leaving one flag off: the human who granted an agent its tier
+ *  could record their own BLESS, and because `review_freshness` deliberately
+ *  never re-checks independence at read time, that review went on to hold the
+ *  very grant its author had made. A rule enforced only when you remember to
+ *  ask for it is not enforced.
+ *
+ *  The grant store is passed as a path rather than located by convention, like
+ *  every other input to this CLI — one install has to serve several fleets, and
+ *  a guessed path would guess wrong for exactly those. A file that does not
+ *  exist yet reads as no grants, so a review recorded before any grant loses
+ *  nothing by naming where the grants will live. There is deliberately NO
+ *  opt-out: an escape hatch would have to annotate the record to stay honest,
+ *  and a rule this cheap does not need one. */
 export function cmdReview(options: Options, io: CliIo): number {
   const reviewsPath = required(options, "reviews", "review");
   const grantsPath = optional(options, "grants");
-  const grants = grantsPath ? loadGrants(grantsPath) : undefined;
+  if (!grantsPath) {
+    throw new UsageError(
+      `review: --grants <grants.jsonl> is required. Reviewer independence is checked against the ` +
+        `grant store — whoever granted an agent its tier cannot be the one certifying it still ` +
+        `deserves that tier — and nothing re-checks it later, so an omitted store would skip the ` +
+        `rule silently. Pass the path your grants live at; a file that does not exist yet reads ` +
+        `as no grants, so recording a review before any grant is fine.`,
+    );
+  }
+  const grants = loadGrants(grantsPath);
 
   const review = recordReview(
     {
@@ -319,7 +342,7 @@ export function cmdReview(options: Options, io: CliIo): number {
       evidence: optional(options, "evidence") ?? "",
       ...(optional(options, "note") ? { note: optional(options, "note") } : {}),
     },
-    { timestamp: asOf(options), ...(grants ? { grants } : {}) },
+    { timestamp: asOf(options), grants },
   );
   saveReview(review, reviewsPath);
 

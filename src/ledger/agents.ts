@@ -101,8 +101,8 @@ function isAgentRecord(v: Record<string, unknown>): boolean {
     nonEmpty(v.name) &&
     nonEmpty(v.configHash) &&
     nonEmpty(v.modelId) &&
-    nonEmpty(v.registeredAt) &&
-    nonEmpty(v.configSince) &&
+    isInstant(v.registeredAt) &&
+    isInstant(v.configSince) &&
     typeof v.gateN === "number" &&
     Number.isFinite(v.gateN) &&
     Array.isArray(v.configIds)
@@ -111,6 +111,15 @@ function isAgentRecord(v: Record<string, unknown>): boolean {
 
 function nonEmpty(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
+}
+
+/** A non-empty string that actually parses as an instant.
+ *
+ *  `configSince` decides which runs may earn a grant, so a hand-edited record
+ *  carrying "soon" must be refused at the door. Checking only for presence let
+ *  such a record load and then resolve every era to the permissive answer. */
+function isInstant(v: unknown): v is string {
+  return nonEmpty(v) && !Number.isNaN(Date.parse(v));
 }
 
 /** Read a JSONL file, validating every line. Blank lines are skipped; a line

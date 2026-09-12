@@ -120,6 +120,28 @@ function warnOnExcludedEvidence(
   );
 }
 
+/** Why an unattributed run was placed in the current config's era — and the two
+ *  cases really are different sentences.
+ *
+ *  On a never-rotated agent the runs are placed because there is only ONE era to
+ *  place them in, and they routinely predate the registration (an agent is
+ *  usually registered some time after it starts running). Saying "recorded
+ *  after <configSince>" there is simply false, and in a tool that asks operators
+ *  to disagree with a verdict by reading its evidence line, a false evidence
+ *  line is a defect rather than a wording nit. */
+function whyInWindow(agent: AgentRecord): string {
+  if (agent.configSince === agent.registeredAt) {
+    return (
+      `this agent has never rotated its config, so there is only one configuration era on ` +
+      `record (${agent.configHash}, registered ${agent.configSince}) and these runs are placed in it`
+    );
+  }
+  return (
+    `they were recorded at or after ${agent.configSince}, when ${agent.configHash} was ` +
+    `already the config on file`
+  );
+}
+
 /** Name the counted runs whose lineage is INFERRED rather than proven.
  *
  *  These runs carry no config hash but land inside the current config's window,
@@ -134,8 +156,7 @@ function warnOnUnverifiedEvidence(
   if (!onWarn || evidence.unverified === 0) return;
   onWarn(
     `${evidence.unverified} of the ${evidence.streak} runs this grant rests on carry no config ` +
-      `hash, so their lineage is INFERRED from the clock rather than proven: they were recorded ` +
-      `after ${agent.configSince}, when ${agent.configHash} was already the config on file. ` +
+      `hash, so their lineage is INFERRED rather than proven: ${whyInWindow(agent)}. ` +
       `They are counted as unverified evidence. Run this agent's evals with ` +
       `--agents <agents.jsonl> --agent ${agent.id} to make future evidence provable.`,
   );
