@@ -15,6 +15,7 @@ import { checkGrant } from "./check.js";
 import { agentStreak, lastEvent } from "./evidence.js";
 import { eligibilityEvidence } from "./era.js";
 import { grantsForAgent } from "./grants.js";
+import { latestReview } from "./reviews.js";
 import { highestTier, SUPERVISED, tierRank } from "./tiers.js";
 import { clearedForAutonomy } from "../runlog/index.js";
 import type {
@@ -65,6 +66,9 @@ export function ledgerEntry(
   const observedStreak = deps.events === undefined ? 0 : agentStreak(events, agent);
   const last = deps.events === undefined ? undefined : lastEvent(events, agent);
 
+  const review =
+    deps.reviews === undefined ? undefined : latestReview(deps.reviews, agent.id, deps.asOf);
+
   const grantedTiers = [...new Set(own.map((g) => g.tier))].sort(
     (a, b) => tierRank(a) - tierRank(b),
   );
@@ -83,6 +87,13 @@ export function ledgerEntry(
     gateN: agent.gateN,
     eligible: clearedForAutonomy(streak, agent.gateN),
     ...(last ? { lastVerdict: last.verdict.status, lastRunAt: last.timestamp } : {}),
+    ...(review
+      ? {
+          lastReviewAt: review.timestamp,
+          lastReviewVerdict: review.verdict,
+          lastReviewBy: review.reviewerId,
+        }
+      : {}),
   };
 }
 

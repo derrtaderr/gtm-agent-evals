@@ -5,7 +5,7 @@
 // run through escapeHtml before it enters the markup — a reason or id carrying
 // "<script>" renders as inert text, never live markup.
 
-import type { DashboardViewModel, ConfigView, RegressionView } from "./model.js";
+import type { DashboardViewModel, ConfigView, RegressionView, AgentView } from "./model.js";
 import { escapeHtml } from "./escape.js";
 
 export function renderDashboard(vm: DashboardViewModel): string {
@@ -44,6 +44,33 @@ export function renderDashboard(vm: DashboardViewModel): string {
           </tbody>
         </table>`;
 
+  // Omitted entirely rather than rendered empty: a "Fleet" heading over nothing
+  // reads as "no agents have autonomy", which is a different claim from "this
+  // dashboard was not given a ledger".
+  const fleetSection =
+    vm.fleet === undefined
+      ? ""
+      : `
+  <section>
+    <h2>Fleet</h2>
+    ${
+      vm.fleet.length === 0
+        ? `<p class="empty">No agents registered in the ledger.</p>`
+        : `<table class="grid">
+          <thead>
+            <tr>
+              <th>Agent</th><th>Tier</th><th>Grant</th><th>Incident</th>
+              <th>Streak</th><th>Falsifiers</th><th>Last review</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${vm.fleet.map(agentRow).join("\n")}
+          </tbody>
+        </table>
+        <p class="note">Streak counts clean runs from the agent's CURRENT configuration against its gate; * marks an agent eligible for a grant. Eligibility is not autonomy — a grant is a human decision.</p>`
+    }
+  </section>`;
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -69,6 +96,8 @@ ${summaryCards}
     <h2>Configs</h2>
     ${configSection}
   </section>
+
+${fleetSection}
 
   <section>
     <h2>Regression</h2>
@@ -117,6 +146,38 @@ function configRow(c: ConfigView): string {
   </tr>`;
 }
 
+/** One agent's row. Every cell is event- or operator-origin data, so every cell
+ *  goes through escapeHtml — an agent NAME carrying "<script>" must render as
+ *  inert text, exactly like the verdict reasons above. */
+function agentRow(a: AgentView): string {
+  const tierClass = a.effectiveTier === "auto" ? "pass" : a.effectiveTier === "advisory" ? "warn" : "muted";
+  const grantCell = a.grantStatus
+    ? `<span class="chip ${a.grantStatus === "VALID" ? "pass" : a.grantStatus === "SUSPECT" ? "warn" : "block"}">${escapeHtml(a.grantStatus)}</span>`
+    : `<span class="muted">—</span>`;
+
+  // An incident must never be invisible: the whole reason this column exists is
+  // that an agent can be mid-demotion while its top grant still reads VALID.
+  const incidentCell =
+    a.incidents.length === 0
+      ? `<span class="muted">—</span>`
+      : a.incidents.map((i) => `<span class="chip block">${escapeHtml(i)}</span>`).join(" ");
+
+  const reviewCell = a.lastReviewAt
+    ? `<span class="chip ${a.lastReviewVerdict === "BLOCK" ? "block" : "pass"}">${escapeHtml(String(a.lastReviewVerdict))}</span> ` +
+      `<span class="muted">${escapeHtml(a.lastReviewAt.slice(0, 10))}${a.lastReviewBy ? ` by ${escapeHtml(a.lastReviewBy)}` : ""}</span>`
+    : `<span class="muted">never reviewed</span>`;
+
+  return `<tr>
+    <td class="mono">${escapeHtml(a.agentId)}<div class="sub2">${escapeHtml(a.name)}</div></td>
+    <td><span class="badge ${tierClass}">${escapeHtml(a.effectiveTier)}</span></td>
+    <td>${grantCell}</td>
+    <td>${incidentCell}</td>
+    <td class="mono">${escapeHtml(String(a.streak))}/${escapeHtml(String(a.gateN))}${a.eligible ? " *" : ""}</td>
+    <td class="mono">${escapeHtml(String(a.falsifiersHolding))}/${escapeHtml(String(a.falsifiersTotal))}</td>
+    <td>${reviewCell}</td>
+  </tr>`;
+}
+
 function regressionRow(r: RegressionView): string {
   const cls = r.status === "MATCH" ? "pass" : r.status === "DRIFT" ? "warn" : "block";
   return `<tr>
@@ -154,6 +215,11 @@ const STYLE = `
   .history { white-space: normal; }
   .reason { color: #f28b8b; font-size: 12px; margin-top: 4px; white-space: normal; font-family: -apple-system, sans-serif; }
   .empty { color: #99a0ad; font-style: italic; }
+  .note { color: #99a0ad; font-size: 12px; margin: 8px 0 0; }
+  .sub2 { color: #5b6472; font-size: 12px; margin-top: 2px; font-family: -apple-system, sans-serif; }
+  .badge.pass { color: #74e0a0; }
+  .badge.warn { color: #f0cf7a; }
+  .badge.muted { color: #99a0ad; }
   .foot { margin-top: 40px; color: #5b6472; font-size: 13px; }
 `;
 
