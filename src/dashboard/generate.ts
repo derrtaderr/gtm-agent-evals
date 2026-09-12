@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { RegressionResult } from "../types.js";
+import type { Ledger, RegressionResult } from "../types.js";
 import { readEvents } from "../telemetry/jsonl.js";
 import { buildViewModel } from "./model.js";
 import { renderDashboard } from "./render.js";
@@ -15,6 +15,9 @@ export type GenerateOptions = {
   /** per-config gateN so the dashboard can report cleared-for-autonomy; the
    *  telemetry stream does not carry gateN, so the caller supplies it. */
   gateNByConfig?: Record<string, number>;
+  /** the autonomy ledger JSON written by `check --out` / `status --out`;
+   *  omitted -> no fleet section. */
+  ledgerPath?: string;
 };
 
 /**
@@ -33,6 +36,7 @@ export function generateDashboard(
   const vm = buildViewModel(events, {
     regressions,
     gateNByConfig: options.gateNByConfig,
+    ...(options.ledgerPath ? { ledger: readLedgerFile(options.ledgerPath) } : {}),
   });
   const html = renderDashboard(vm);
 
@@ -70,4 +74,26 @@ export function readRegressionResults(path: string): RegressionResult[] {
     }
   });
   return parsed as RegressionResult[];
+}
+
+/** Parse a ledger JSON file. Throws loudly rather than rendering an empty fleet:
+ *  a dashboard showing no agents because the file was the wrong shape is the
+ *  same false-clean reading this repo exists to prevent. */
+export function readLedgerFile(path: string): Ledger {
+  const parsed = JSON.parse(readFileSync(path, "utf8"));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(
+      `dashboard: ledger file "${path}" must be a JSON object as written by \`check --out\`, ` +
+        `got ${parsed === null ? "null" : typeof parsed}`,
+    );
+  }
+  const l = parsed as Record<string, unknown>;
+  if (!Array.isArray(l.agents)) {
+    throw new Error(
+      `dashboard: ledger file "${path}" has no "agents" array — it is not a ledger. ` +
+        `Write one with \`check --out <ledger.json>\`.`,
+    );
+  }
+  if (!Array.isArray(l.orphanGrants)) l.orphanGrants = [];
+  return parsed as Ledger;
 }

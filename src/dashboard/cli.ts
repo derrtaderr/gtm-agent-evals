@@ -4,6 +4,7 @@
 //
 //   node dist/dashboard/cli.js telemetry/events.jsonl dashboard.html
 //   node dist/dashboard/cli.js telemetry/events.jsonl dashboard.html --regression regression.json
+//   node dist/dashboard/cli.js telemetry/events.jsonl dashboard.html --ledger ledger.json
 //
 // The arg parser is pure and unit-tested; main() wires it to generateDashboard.
 
@@ -13,14 +14,16 @@ export type DashboardArgs = {
   telemetryPath: string;
   outPath: string;
   regressionPath?: string;
+  ledgerPath?: string;
 };
 
 const USAGE =
-  "usage: gtm-evals-dashboard <telemetry.jsonl> <out.html> [--regression <results.json>]";
+  "usage: gtm-evals-dashboard <telemetry.jsonl> <out.html> [--regression <results.json>] [--ledger <ledger.json>]";
 
 export function parseDashboardArgs(argv: string[]): DashboardArgs {
   const positionals: string[] = [];
   let regressionPath: string | undefined;
+  let ledgerPath: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -31,6 +34,13 @@ export function parseDashboardArgs(argv: string[]): DashboardArgs {
       }
       regressionPath = value;
       i++;
+    } else if (arg === "--ledger") {
+      const value = argv[i + 1];
+      if (value === undefined) {
+        throw new Error(`--ledger needs a file path\n${USAGE}`);
+      }
+      ledgerPath = value;
+      i++;
     } else {
       positionals.push(arg);
     }
@@ -40,12 +50,14 @@ export function parseDashboardArgs(argv: string[]): DashboardArgs {
     throw new Error(`missing telemetry and/or output path\n${USAGE}`);
   }
 
-  return { telemetryPath: positionals[0], outPath: positionals[1], regressionPath };
+  return { telemetryPath: positionals[0], outPath: positionals[1], regressionPath, ledgerPath };
 }
 
 export function main(argv: string[]): void {
   const args = parseDashboardArgs(argv);
-  const out = generateDashboard(args.telemetryPath, args.outPath, args.regressionPath);
+  const out = generateDashboard(args.telemetryPath, args.outPath, args.regressionPath, {
+    ...(args.ledgerPath ? { ledgerPath: args.ledgerPath } : {}),
+  });
   process.stdout.write(`wrote ${out}\n`);
 }
 

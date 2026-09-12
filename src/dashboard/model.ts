@@ -6,6 +6,8 @@
 // decision is Lane A's `clearedForAutonomy`.
 
 import type {
+  AgentLedgerEntry,
+  Ledger,
   TelemetryEvent,
   VerdictStatus,
   RegressionResult,
@@ -49,10 +51,39 @@ export type DashboardSummary = {
   configCount: number;
 };
 
+/** One agent's row in the fleet section — the autonomy ledger at a glance.
+ *
+ *  This is a flattening of `AgentLedgerEntry`, not a second computation of it.
+ *  Every judgment (effective tier, grant status, what counts as an incident) was
+ *  already made by the ledger; re-deriving any of it here is how two surfaces
+ *  come to disagree about whether an agent is in trouble. */
+export type AgentView = {
+  agentId: string;
+  name: string;
+  effectiveTier: string;
+  /** Status of the check explaining the effective tier; absent with no grants. */
+  grantStatus?: string;
+  /** Unarchived grants that are not holding, as "<tier> <STATUS>". Empty is the
+   *  only value that may read as healthy. */
+  incidents: string[];
+  falsifiersHolding: number;
+  falsifiersTotal: number;
+  streak: number;
+  gateN: number;
+  eligible: boolean;
+  lastVerdict?: VerdictStatus;
+  lastReviewAt?: string;
+  lastReviewVerdict?: string;
+  lastReviewBy?: string;
+};
+
 export type DashboardViewModel = {
   summary: DashboardSummary;
   configs: ConfigView[];
   regressions: RegressionView[];
+  /** Absent when no ledger was supplied — the dashboard predates the ledger and
+   *  still works without one. */
+  fleet?: AgentView[];
 };
 
 export type BuildViewModelOptions = {
@@ -60,6 +91,8 @@ export type BuildViewModelOptions = {
   regressions?: RegressionResult[];
   /** per-config gateN so the model can report cleared-for-autonomy */
   gateNByConfig?: Record<string, number>;
+  /** the autonomy ledger, as written by `check --out` / `status --out` */
+  ledger?: Ledger;
 };
 
 export function buildViewModel(
@@ -117,5 +150,36 @@ export function buildViewModel(
     },
     configs,
     regressions,
+    ...(options.ledger ? { fleet: options.ledger.agents.map(agentView) } : {}),
+  };
+}
+
+/** Flatten one ledger row for display. Reads the ledger's verdicts; decides
+ *  nothing itself. */
+export function agentView(entry: AgentLedgerEntry): AgentView {
+  // The check that explains the effective tier, matching the terminal table's
+  // rule: the holding grant at that tier, else the last check on file.
+  const top =
+    entry.checks.find((c) => c.tier === entry.effectiveTier && c.status === "VALID") ??
+    entry.checks[entry.checks.length - 1];
+  return {
+    agentId: entry.agentId,
+    name: entry.name,
+    effectiveTier: entry.effectiveTier,
+    ...(top ? { grantStatus: top.status } : {}),
+    // Archived grants are excluded: they have been explicitly resolved, and an
+    // alarm that cannot be cleared is an alarm that gets ignored.
+    incidents: entry.checks
+      .filter((c) => c.status !== "VALID" && !c.archived)
+      .map((c) => `${c.tier} ${c.status}`),
+    falsifiersHolding: top ? top.falsifiers.filter((f) => f.status === "HOLDS").length : 0,
+    falsifiersTotal: top ? top.falsifiers.length : 0,
+    streak: entry.streak,
+    gateN: entry.gateN,
+    eligible: entry.eligible,
+    ...(entry.lastVerdict ? { lastVerdict: entry.lastVerdict } : {}),
+    ...(entry.lastReviewAt ? { lastReviewAt: entry.lastReviewAt } : {}),
+    ...(entry.lastReviewVerdict ? { lastReviewVerdict: entry.lastReviewVerdict } : {}),
+    ...(entry.lastReviewBy ? { lastReviewBy: entry.lastReviewBy } : {}),
   };
 }

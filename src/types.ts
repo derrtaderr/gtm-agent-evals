@@ -364,6 +364,12 @@ export type AgentLedgerEntry = {
   eligible: boolean;
   lastVerdict?: VerdictStatus;
   lastRunAt?: string;
+  /** The newest independent review of this agent, when a reviews source was
+   *  supplied. Carried on the row so every surface can show review recency
+   *  without re-joining against the review store. */
+  lastReviewAt?: string;
+  lastReviewVerdict?: ReviewVerdict;
+  lastReviewBy?: string;
 };
 
 /** The whole ledger as one artifact: what every registered agent may do
