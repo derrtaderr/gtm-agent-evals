@@ -175,10 +175,69 @@ describe("grant", () => {
     expect(errText()).toMatch(/example-ghost/);
   });
 
+  it("never labels the CURRENT config as what the streak was earned on", async () => {
+    await grantAuto();
+    // The runs and the agent's present configuration are two different facts.
+    // Printing "earned on: ... config <current hash>" asserts a lineage the
+    // platform cannot establish (a TelemetryEvent carries no config hash).
+    expect(text()).not.toMatch(/earned on:.*config/);
+    expect(text()).toMatch(/agent at grant time:.*config sha256:aaaa1111/);
+    expect(text()).toMatch(/evidence:.*3\/3/);
+    expect(text()).toMatch(/run-2026-09-10T00:00:00\.000Z/);
+    expect(text()).toMatch(/lineage is not tracked/i);
+  });
+
+  it("refuses with exit 5 and names the missing source when no --telemetry is given", async () => {
+    const code = await run(
+      [
+        "grant", "--agents", agents, "--grants", grants, "--agent", "example-enricher",
+        "--tier", "auto", "--confirm", "grant auto to example-enricher",
+        "--granted-by", "operator", "--as-of", ASOF,
+      ],
+      io,
+    );
+    expect(code).toBe(5);
+    expect(errText()).toMatch(/no --telemetry/);
+    expect(errText()).not.toMatch(/streak of 0/);
+    expect(existsSync(grants)).toBe(false);
+  });
+
   it("exits 1 on a tier outside the vocabulary", async () => {
     const code = await grantAuto(["--tier", "unlimited", "--confirm", "grant unlimited to example-enricher"]);
     expect(code).toBe(1);
     expect(errText()).toMatch(/supervised, advisory, auto/);
+  });
+});
+
+// The ship-check reviewer's exact reproduction for B1.
+describe("re-granting after a config rotation (the reviewer's B1 sequence)", () => {
+  beforeEach(async () => {
+    await register();
+    writeTelemetry(cleanThree);
+    await grantAuto();
+    out = [];
+    err = [];
+  });
+
+  it("warns loudly at grant time that the streak is prior-era evidence", async () => {
+    // 1. rotate the config — the existing grant is correctly REVOKED
+    await register(["--config-hash", "sha256:cccc3333", "--as-of", "2026-09-11T12:00:00.000Z"]);
+    out = [];
+    err = [];
+    // 2. re-grant immediately, with zero runs under the new config
+    const code = await grantAuto(["--as-of", "2026-09-11T13:00:00.000Z"]);
+
+    expect(code).toBe(0); // still allowed — this is an informed confirmation, not a new gate
+    expect(errText()).toMatch(/^warning:/m);
+    expect(errText()).toMatch(/3 of the 3 runs/);
+    expect(errText()).toMatch(/BEFORE example-enricher's current config was registered/);
+    expect(errText()).toMatch(/sha256:cccc3333/);
+    expect(errText()).toMatch(/cannot yet tell which config produced a run/);
+  });
+
+  it("stays quiet when the streak really was recorded under the current registration", async () => {
+    await grantAuto(["--tier", "advisory", "--confirm", "grant advisory to example-enricher"]);
+    expect(errText()).not.toMatch(/prior|BEFORE/);
   });
 });
 

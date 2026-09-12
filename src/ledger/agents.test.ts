@@ -57,6 +57,50 @@ describe("registerAgent", () => {
   });
 });
 
+// `registeredAt` answers "when did we first see this agent". `configSince`
+// answers "since when has it been THIS agent". The second is what prior-era
+// evidence is measured against, and the two only diverge once a config rotates,
+// which is what keeps the prior-era warning off an ordinary first grant.
+describe("config lineage", () => {
+  const first = registerAgent(enricher, { registeredAt: "2026-09-01T00:00:00.000Z" });
+
+  it("sets configSince to the registration time on a first registration", () => {
+    expect(first.configSince).toBe("2026-09-01T00:00:00.000Z");
+    expect(first.registeredAt).toBe("2026-09-01T00:00:00.000Z");
+  });
+
+  it("carries both forward when re-registering the SAME config hash", () => {
+    const again = registerAgent(enricher, {
+      registeredAt: "2026-09-05T00:00:00.000Z",
+      previous: first,
+    });
+    expect(again.registeredAt).toBe("2026-09-01T00:00:00.000Z");
+    expect(again.configSince).toBe("2026-09-01T00:00:00.000Z");
+  });
+
+  it("moves configSince, and only configSince, when the hash rotates", () => {
+    const rotated = registerAgent(
+      { ...enricher, configHash: "sha256:bbbb2222" },
+      { registeredAt: "2026-09-05T00:00:00.000Z", previous: first },
+    );
+    expect(rotated.configSince).toBe("2026-09-05T00:00:00.000Z");
+    expect(rotated.registeredAt).toBe("2026-09-01T00:00:00.000Z");
+  });
+
+  it("keeps first-seen stable across several rotations", () => {
+    const r1 = registerAgent(
+      { ...enricher, configHash: "sha256:bbbb" },
+      { registeredAt: "2026-09-05T00:00:00.000Z", previous: first },
+    );
+    const r2 = registerAgent(
+      { ...enricher, configHash: "sha256:cccc" },
+      { registeredAt: "2026-09-09T00:00:00.000Z", previous: r1 },
+    );
+    expect(r2.registeredAt).toBe("2026-09-01T00:00:00.000Z");
+    expect(r2.configSince).toBe("2026-09-09T00:00:00.000Z");
+  });
+});
+
 describe("agent registry store (JSONL)", () => {
   it("returns an empty registry when the store file does not exist", () => {
     expect(loadAgents(store)).toEqual([]);

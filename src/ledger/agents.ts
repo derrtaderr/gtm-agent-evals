@@ -30,6 +30,11 @@ export type RegisterAgentInput = {
 export type RegisterAgentOptions = {
   /** Injectable clock (ISO 8601); defaults to now. */
   registeredAt?: string;
+  /** The record already in the store, when re-registering. Supplying it is what
+   *  lets the ledger tell a config ROTATION from a first registration: first-seen
+   *  is carried forward, and `configSince` moves only when the hash actually
+   *  changes. Omitting it makes every re-registration look like a fresh agent. */
+  previous?: AgentRecord;
 };
 
 /** Build an AgentRecord, refusing anything missing the fields the falsifiers
@@ -44,6 +49,9 @@ export function registerAgent(
   requireNonEmpty(input.name, "name");
   requireNonEmpty(input.configHash, "configHash");
   requireNonEmpty(input.modelId, "modelId");
+  const now = options.registeredAt ?? new Date().toISOString();
+  const prev = options.previous;
+  const rotated = prev !== undefined && prev.configHash !== input.configHash;
   return {
     id: input.id,
     name: input.name,
@@ -52,7 +60,11 @@ export function registerAgent(
     modelId: input.modelId,
     gateN: input.gateN ?? DEFAULT_GATE_N,
     configIds: input.configIds ?? [],
-    registeredAt: options.registeredAt ?? new Date().toISOString(),
+    // First-seen never moves; re-registering an agent does not make it new.
+    registeredAt: prev?.registeredAt ?? now,
+    // The current config's own age. Unchanged when the hash is unchanged, so
+    // re-registering to fix a typo in the NAME does not read as a rotation.
+    configSince: rotated ? now : (prev?.configSince ?? now),
   };
 }
 
@@ -90,6 +102,7 @@ function isAgentRecord(v: Record<string, unknown>): boolean {
     nonEmpty(v.configHash) &&
     nonEmpty(v.modelId) &&
     nonEmpty(v.registeredAt) &&
+    nonEmpty(v.configSince) &&
     typeof v.gateN === "number" &&
     Number.isFinite(v.gateN) &&
     Array.isArray(v.configIds)
