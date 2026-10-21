@@ -61,7 +61,7 @@ agent the way tests gate a deploy, and keeps a record.
 ```bash
 git clone https://github.com/derrtaderr/gtm-agent-evals
 cd gtm-agent-evals
-npm install && npm run build && npm test   # 614 tests
+npm install && npm run build && npm test   # 640 tests
 ```
 
 Evaluate a bad cold email against the bundled outbound config:
@@ -462,7 +462,7 @@ checks and printed green is worse than no gate.
 
 ## Receipts
 
-614 tests, all deterministic and keyless. The eval and regression halves were
+640 tests, all deterministic and keyless. The eval and regression halves were
 adversarially reviewed before merge, and that review trail is the development
 story: independent reviewers found a research rule that green-lit fabricated
 funding numbers, a regression classifier blind to a vanished dimension, a
