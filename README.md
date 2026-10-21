@@ -1,6 +1,23 @@
-# gtm-agent-evals
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/gtm-agent-evals-wordmark-dark.png">
+    <img src="assets/gtm-agent-evals-wordmark-light.png" alt="gtm-agent-evals" width="420">
+  </picture>
+  <br>
+  The layer that answers "has this agent earned autonomy", and keeps checking.
+</p>
 
-**The layer that answers "has this agent earned autonomy" — and keeps checking.**
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-339933" alt="MIT license">
+  <img src="https://img.shields.io/badge/runtime%20dependencies-1%20(Anthropic%20SDK)-F97316" alt="One runtime dependency, the Anthropic SDK">
+  <img src="https://img.shields.io/badge/API%20key-rubric%20only-8B949E" alt="An API key is needed only for the LLM rubric; rules and the ledger run without one">
+</p>
+
+<p align="center">
+  <a href="#sixty-seconds-no-api-key">
+    <img src="assets/gtm-agent-evals-demo.gif" alt="Running node dist/cli/index.js eval --rules-only on a bad cold email: BLOCK, 4 blocking rules, three unfilled personalization tokens and no call to action." width="760">
+  </a>
+</p>
 
 Shipping an agent is easy now. Deciding it may run without a person reading its
 output is the hard part, and almost nothing in the stack helps you make that
